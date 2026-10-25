@@ -1,0 +1,10 @@
+{
+  "name": "ARC Raiders 網頁版",
+  "short_name": "ARC Raiders",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#14110e",
+  "theme_color": "#14110e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
