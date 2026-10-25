@@ -16,7 +16,7 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 body { -webkit-user-select: none; user-select: none; touch-action: none; }
 button { font-family: inherit; color: inherit; cursor: pointer; }
 .hidden { display: none !important; }
-#game { position: fixed; inset: 0; display: block; }
+#game { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
 
 /* ---------- 按鈕 ---------- */
 .btn { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; font-size: 14px; font-weight: 600; transition: transform .08s, background .15s; }
@@ -223,4 +223,39 @@ body.touch #minimap { width: 110px; height: 110px; }
   .deploy .btn.big { padding: 9px 18px; font-size: 15px; }
   #banner .bt { font-size: 26px; }
   #panel { padding: 10px; }
+}
+
+/* ---------- 開火按鈕與操作提示 ---------- */
+#fireBtn { position: fixed; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); width: 92px; height: 92px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #ff8a4a, #c8321c); border: 3px solid rgba(255,220,180,.8); font-size: 34px; z-index: 13; display: none;
+  flex-direction: column; align-items: center; justify-content: center; line-height: 1; padding: 0; touch-action: none; box-shadow: 0 4px 16px rgba(0,0,0,.5); color: #fff; }
+#fireBtn small { font-size: 13px; font-weight: 800; margin-top: 2px; }
+#fireBtn.down { transform: scale(.92); background: radial-gradient(circle at 40% 35%, #ffb070, #ff4a2a); }
+body.touch #fireBtn:not(.hidden) { display: flex; }
+body.touch #touchBtns { right: calc(max(14px, env(safe-area-inset-right)) + 104px); }
+#ctrlHint { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.45); font-size: 15px; line-height: 1.6; text-align: center; color: #fff; }
+#ctrlHint b { font-size: 18px; color: var(--accent); }
+#ctrlHint > div { position: absolute; background: rgba(20,17,14,.9); border: 1px solid var(--accent); border-radius: 12px; padding: 10px 16px; }
+#ctrlHint .ch-l { left: 6%; top: 50%; transform: translateY(-50%); }
+#ctrlHint .ch-r { right: 6%; top: 28%; }
+#ctrlHint .ch-f { right: 120px; bottom: 118px; border-color: #ff6a3a; }
+#ctrlHint .ch-f b { color: #ff8a4a; }
+#ctrlHint .ch-c { left: 50%; top: 50%; transform: translate(-50%,-50%); max-width: 90vw; }
+#ctrlHint .ch-x { left: 50%; bottom: 14px; transform: translateX(-50%); border: none; background: none; font-size: 13px; color: #ccc; }
+@media (max-height: 420px) {
+  #fireBtn { width: 80px; height: 80px; font-size: 28px; }
+  body.touch #touchBtns { right: calc(max(14px, env(safe-area-inset-right)) + 90px); }
+  #ctrlHint .ch-f { right: 100px; bottom: 100px; }
+  #ctrlHint .ch-r { top: 18%; }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  #fireBtn { width: 84px; height: 84px; }
+  body.touch #touchBtns { right: max(14px, env(safe-area-inset-right)); bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px); }
+  #ctrlHint .ch-f { right: 16px; bottom: 110px; }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  body.touch #hudTL { width: 132px; }
+  #weapon { min-width: 0; }
+  #hudTC { left: 52%; }
+  #objective { font-size: 10px; white-space: normal; max-width: 120px; }
 }

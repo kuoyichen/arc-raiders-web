@@ -41,6 +41,17 @@ const Input = {
     zone.addEventListener('touchcancel', e => this.onTouchEnd(e), opts);
     window.addEventListener('touchstart', () => { if (!this.touch) { this.touch = true; document.body.classList.add('touch'); } Sfx.init(); Sfx.resume(); }, { passive: true });
 
+    // 開火按鈕：按住持續射擊
+    const fb = document.getElementById('fireBtn');
+    const fireOn = e => { e.preventDefault(); e.stopPropagation(); this.fireHeld = true; fb.classList.add('down'); Sfx.init(); Sfx.resume(); };
+    const fireOff = e => { if (e) e.preventDefault(); this.fireHeld = false; fb.classList.remove('down'); };
+    fb.addEventListener('touchstart', fireOn, opts);
+    fb.addEventListener('touchend', fireOff, opts);
+    fb.addEventListener('touchcancel', fireOff, opts);
+    fb.addEventListener('mousedown', fireOn);
+    fb.addEventListener('mouseup', fireOff);
+    fb.addEventListener('mouseleave', () => fireOff());
+
     // 觸控按鈕
     document.querySelectorAll('[data-act]').forEach(b => {
       const act = b.dataset.act;
@@ -119,6 +130,8 @@ const Input = {
 
   resetTouch() {
     this.sticks = {};
+    this.fireHeld = false;
+    const fb = document.getElementById('fireBtn'); if (fb) fb.classList.remove('down');
     this.move.x = this.move.y = 0;
     this.aim.active = false; this.aim.mag = 0;
     ['L', 'R'].forEach(s => { const el = this.stickEl(s); if (el) el.style.display = 'none'; });

@@ -25,15 +25,15 @@ const Raid = {
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.dpr = dpr;
-    this.vw = window.innerWidth; this.vh = window.innerHeight;
+    this.vw = this.cv.clientWidth || window.innerWidth; this.vh = this.cv.clientHeight || window.innerHeight;
     this.cv.width = Math.floor(this.vw * dpr); this.cv.height = Math.floor(this.vh * dpr);
-    this.cv.style.width = this.vw + 'px'; this.cv.style.height = this.vh + 'px';
     // 依螢幕大小決定縮放，讓手機與電腦看到的範圍差不多
     this.scale = clamp(Math.min(this.vw, this.vh) / 640, 0.5, 1.5) * (Math.max(this.vw, this.vh) < 900 ? 0.95 : 1);
   },
 
   // ---------- 開局 ----------
   start(mapId) {
+    this.resize();
     const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
     World.gen(mapId, seed);
     this.mapId = mapId;
@@ -86,6 +86,7 @@ const Raid = {
     Input.resetTouch();
     this.say(`已空降至 ${this.map.name}。搜刮物資並在 ${Math.round(RAID_TIME / 60)} 分鐘內撤離！`, '#9fe');
     this.banner(this.map.name, '找到撤離電梯並活著回來');
+    UI.showCtrlHint();
     this.last = performance.now();
   },
 
@@ -187,6 +188,7 @@ const Raid = {
 
   // ---------- 主迴圈 ----------
   frame(now) {
+    if (this.cv.clientWidth !== this.vw || this.cv.clientHeight !== this.vh) this.resize();
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (!this.active) return;
@@ -281,10 +283,16 @@ const Raid = {
     if (Input.touch && !(Input.move.x || Input.move.y)) { const km = Input.keyMove(); if (km.x || km.y) mv = km; }
     const mag = Math.hypot(mv.x, mv.y);
     let aiming = false, firing = false;
-    if (Input.touch && Input.aim.active) {
+    if (Input.touch && (Input.aim.active || Input.fireHeld)) {
       aiming = true;
-      p.ang = this.aimAssist(Math.atan2(Input.aim.y, Input.aim.x));
-      firing = Input.aim.mag > 0.55;
+      if (Input.aim.active) p.ang = this.aimAssist(Math.atan2(Input.aim.y, Input.aim.x));
+      else {
+        // 只按開火鍵時，自動瞄準最近的可見敵人；沒有就朝面向方向射擊
+        const t = this.nearestEnemy(650);
+        if (t) p.ang += angDiff(p.ang, Math.atan2(t.y - p.y, t.x - p.x)) * Math.min(1, dt * 14);
+        else if (mag > 0.1) p.ang = Math.atan2(mv.y, mv.x);
+      }
+      firing = Input.fireHeld || Input.aim.mag > 0.55;
     } else if (!Input.touch || Input.mouse.inside) {
       if (!Input.touch) {
         const wx = this.cam.x + (Input.mouse.x - this.vw / 2) / this.scale;
@@ -405,6 +413,18 @@ const Raid = {
     for (const r of this.raiders) consider(r, r.hostile && r.revealed);
     if (!best) return a;
     return a + angDiff(a, Math.atan2(best.y - p.y, best.x - p.x)) * 0.75;
+  },
+
+  nearestEnemy(range) {
+    const p = this.p;
+    let best = null, bd = range;
+    const consider = e => {
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < bd && World.los(p.x, p.y, e.x, e.y)) { bd = d; best = e; }
+    };
+    for (const e of this.arcs) if (e.alive) consider(e);
+    for (const r of this.raiders) if (r.alive && r.hostile && r.revealed) consider(r);
+    return best;
   },
 
   switchTo(i) {

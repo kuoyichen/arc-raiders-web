@@ -75,6 +75,8 @@ const UI = {
     $('hud').classList.add('hidden');
     $('touchZone').classList.add('hidden');
     $('touchBtns').classList.add('hidden');
+    $('fireBtn').classList.add('hidden');
+    $('ctrlHint').classList.add('hidden');
     $('panel').classList.add('hidden');
     this.renderBase();
   },
@@ -266,8 +268,9 @@ const UI = {
       <p><b>遊戲循環：</b>在斯佩蘭薩整備 → 空降地表 → 搜刮箱子與 ARC 殘骸 → 找到<b>撤離電梯</b>呼叫並守住 25 秒 → 進入電梯撤離。限時 7 分鐘。</p>
       <p><b>死亡懲罰：</b>身上所有裝備與物品都會掉落，只有<b>安全口袋</b>內的東西能保留。破產時可以領取免費基礎裝備。</p>
       <p><b>掠手：</b>地表上的其他掠手（電腦控制）可能友善、也可能隨時背刺你。名字顏色：灰＝未知、黃＝友善、紅＝敵對。</p>
-      <p><b>電腦：</b><kbd>WASD</kbd> 移動 <kbd>滑鼠</kbd> 瞄準射擊 <kbd>Shift</kbd> 衝刺 <kbd>E</kbd> 互動/搜刮 <kbd>R</kbd> 換彈 <kbd>Q</kbd>/<kbd>1</kbd><kbd>2</kbd> 換槍 <kbd>H</kbd> 治療 <kbd>C</kbd> 護盾充能 <kbd>G</kbd> 手雷 <kbd>Tab</kbd> 背包 <kbd>M</kbd> 地圖 <kbd>Esc</kbd> 暫停</p>
-      <p><b>手機：</b>左半邊拖曳移動（推到底自動衝刺），右半邊拖曳瞄準，推遠一點就會開火（有瞄準輔助）。右下按鈕互動、換彈、換槍、治療、護盾、手雷。</p>
+      <p><b>電腦：</b><kbd>滑鼠左鍵</kbd> 按住開火 <kbd>WASD</kbd> 移動 <kbd>滑鼠</kbd> 瞄準 <kbd>Shift</kbd> 衝刺 <kbd>E</kbd> 互動/搜刮 <kbd>R</kbd> 換彈 <kbd>Q</kbd>/<kbd>1</kbd><kbd>2</kbd> 換槍 <kbd>H</kbd> 治療 <kbd>C</kbd> 護盾充能 <kbd>G</kbd> 手雷 <kbd>Tab</kbd> 背包 <kbd>M</kbd> 地圖 <kbd>Esc</kbd> 暫停</p>
+      <p><b>手機開火：</b>按住右下角大顆的 <b>🔥 開火</b> 按鈕，會自動瞄準最近的敵人；或在螢幕右半邊拖曳瞄準，推遠一點也會開火。</p>
+      <p><b>手機移動：</b>左半邊拖曳移動（推到底自動衝刺）。其他按鈕：互動（搜刮/呼叫電梯）、換彈、換槍、治療、護盾、手雷。</p>
       <p><b>技巧：</b>射擊目標中心可爆頭（2.5 倍）；堡壘背後的黃色核心是弱點；槍聲和電梯會吸引 ARC。</p></div>
       <div class="acts"><button class="btn primary" id="helpOk">${first ? '開始吧！' : '了解'}</button></div>`, !back);
     $('helpOk').onclick = () => back ? back() : this.closeModal();
@@ -461,6 +464,7 @@ const UI = {
       $('hud').classList.remove('hidden');
       $('touchZone').classList.remove('hidden');
       $('touchBtns').classList.remove('hidden');
+      $('fireBtn').classList.remove('hidden');
       document.body.classList.add('inraid');
       Raid.start(this.mapSel);
     };
@@ -470,6 +474,25 @@ const UI = {
       return;
     }
     go();
+  },
+
+  // 開局操作提示（前幾局自動顯示）
+  showCtrlHint(force) {
+    const el = $('ctrlHint');
+    if (!force && S.stats.raids > 3) return;
+    el.innerHTML = Input.touch
+      ? `<div class="ch-l"><b>👈 左半邊拖曳</b><br>移動（推到底衝刺）</div>
+         <div class="ch-r"><b>右半邊拖曳 👉</b><br>瞄準，推遠就開火</div>
+         <div class="ch-f"><b>🔥 按住開火</b><br>自動瞄準最近敵人 ↘</div>
+         <div class="ch-x">點一下關閉</div>`
+      : `<div class="ch-c"><b>🖱️ 按住滑鼠左鍵開火</b><br>滑鼠瞄準 · WASD 移動 · Shift 衝刺<br>E 搜刮/呼叫電梯 · R 換彈 · Q 換槍 · H 治療 · G 手雷 · Tab 背包</div>
+         <div class="ch-x">點一下關閉</div>`;
+    el.classList.remove('hidden');
+    const close = () => { el.classList.add('hidden'); clearTimeout(this.hintT); };
+    el.onclick = close;
+    el.ontouchstart = e => { e.preventDefault(); close(); };
+    clearTimeout(this.hintT);
+    this.hintT = setTimeout(close, 9000);
   },
 
   // ================= 遠征面板 =================
@@ -589,6 +612,7 @@ const UI = {
       <div class="acts" style="justify-content:stretch;flex-direction:column">
         <button class="btn primary" onclick="UI.pause(false)">繼續遊戲</button>
         <button class="btn" onclick="UI.showHelp(false,()=>UI.pause(true))">操作說明</button>
+        <button class="btn" onclick="UI.pause(false);UI.showCtrlHint(true)">顯示操作提示</button>
         <button class="btn" onclick="S.settings.sound=!S.settings.sound;saveGame();this.textContent='音效：'+(S.settings.sound?'開':'關')">音效：${S.settings.sound ? '開' : '關'}</button>
         <button class="btn danger" onclick="UI.closeModal();Raid.abandon()">放棄遠征</button></div>`, false);
   },
@@ -616,5 +640,7 @@ const UI = {
     $('hud').classList.add('hidden');
     $('touchZone').classList.add('hidden');
     $('touchBtns').classList.add('hidden');
+    $('fireBtn').classList.add('hidden');
+    $('ctrlHint').classList.add('hidden');
   },
 };
