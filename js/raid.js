@@ -285,14 +285,17 @@ const Raid = {
     const mag = Math.hypot(mv.x, mv.y);
     const panel = UI.panelOpen();
     let firing = !panel && (Input.touch ? Input.fireHeld : (Input.mouse.down && Input.locked));
-    if (Input.touch && firing) {
-      // 觸控瞄準輔助：準心附近的敵人會被輕微吸附
-      const t = this.aimTarget(0.22, 700);
+    // 輔助瞄準：準心附近的敵人會吸附準心（射擊時更強），設定可調整
+    const al = this.assistLv();
+    this.assistT = null;
+    if (al > 0 && !panel) {
+      const cone = [0, 0.2, 0.38][al] * (Input.touch ? 1.15 : 1);
+      const t = this.aimTarget(cone, 800);
       if (t) {
-        p.ang += angDiff(p.ang, Math.atan2(t.y - p.y, t.x - p.x)) * Math.min(1, dt * 7);
-        const [lo, hi] = this.vRange(t);
-        const want = Math.atan2((lo + hi) / 2 - H.EYE, Math.max(30, Math.hypot(t.x - p.x, t.y - p.y)));
-        p.pitch += (want - p.pitch) * Math.min(1, dt * 5);
+        this.assistT = t;
+        const rate = firing ? [0, 5, 11][al] : (Input.touch ? [0, 1.2, 3][al] : [0, 0.6, 1.6][al]);
+        p.ang += angDiff(p.ang, Math.atan2(t.y - p.y, t.x - p.x)) * Math.min(1, dt * rate);
+        p.pitch += (this.pitchTo(t) - p.pitch) * Math.min(1, dt * rate * 0.9);
       }
     }
 
@@ -388,6 +391,13 @@ const Raid = {
       p.extractT += dt;
       if (p.extractT >= 3) { this.end(true, `經由${ex.name}成功撤離`); return; }
     } else p.extractT = 0;
+  },
+
+  assistLv() { return S.settings.assist == null ? 2 : S.settings.assist; },
+  pitchTo(t) {
+    const [lo, hi] = this.vRange(t);
+    const target = t.kind === 'raider' ? 30 : (lo + hi) / 2;
+    return Math.atan2(target - H.EYE, Math.max(30, Math.hypot(t.x - this.p.x, t.y - this.p.y)));
   },
 
   // 目標的垂直範圍（用於上下瞄準的命中判定）
@@ -736,10 +746,20 @@ const Raid = {
     let spr = st.spr;
     if (a.kind === 'player') { spr += a.bloom; if (a.moving) spr *= 1.35; if (a.sprint) spr *= 2; a.bloom = Math.min(8, a.bloom + (d.auto ? 0.7 : 0.4) * (1 - 0.15 * ((w.lvl || 1) - 1))); }
     else spr += a.kind === 'raider' ? 3.5 : 0;
-    const sr = spr * Math.PI / 180;
+    let sr = spr * Math.PI / 180;
+    // 子彈磁吸：準心很接近目標時，子彈直接朝目標修正
+    let baseAng = a.ang, basePit = a.pitch || 0;
+    if (a.kind === 'player' && this.assistT && this.assistT.alive) {
+      const t = this.assistT, al = this.assistLv();
+      const ta = Math.atan2(t.y - a.y, t.x - a.x);
+      if (Math.abs(angDiff(a.ang, ta)) < [0, 0.07, 0.14][al] + t.r / Math.max(60, Math.hypot(t.x - a.x, t.y - a.y))) {
+        baseAng = ta; basePit = this.pitchTo(t);
+        sr *= al === 2 ? 0.5 : 0.75;
+      }
+    }
     for (let i = 0; i < d.pel; i++) {
-      const ang = a.ang + (rand() - 0.5) * sr * 2;
-      const pit = a.kind === 'player' ? clamp((a.pitch || 0) + (rand() - 0.5) * sr * 2, -1.3, 1.3) : 0;
+      const ang = baseAng + (rand() - 0.5) * sr * 2;
+      const pit = a.kind === 'player' ? clamp(basePit + (rand() - 0.5) * sr * 2, -1.3, 1.3) : 0;
       const mx = a.x + Math.cos(a.ang) * (a.r + 8), my = a.y + Math.sin(a.ang) * (a.r + 8);
       this.bullets.push({ x: mx, y: my, vx: Math.cos(ang) * d.spd, vy: Math.sin(ang) * d.spd, dmg: d.dmg, team: a.team, owner: a, travel: 0, max: d.rng, heavy: d.dmg >= 40, col: a.kind === 'player' ? '#fff3a0' : '#ffb070', h: a.kind === 'player' ? H.EYE - 1 : 32, vh: a.kind === 'player' ? Math.tan(pit) * d.spd : 0, aimed: a.kind === 'player' });
     }
