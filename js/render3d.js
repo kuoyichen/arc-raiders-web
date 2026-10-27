@@ -10,6 +10,21 @@ const GFX = [
   { name: '高', pr: 2, far: 1500, tex: 2048, maxP: 700 },
 ];
 
+// 各地圖的外觀主題：天空、光線、建材顏色、遠景
+const THEMES = {
+  dam: { top: 0x5d8fc0, hor: 0xc8d6d0, sun: 0xfff2d8, hemiG: 0x445038, wall: 0x6f6e70, wallTop: 0x9a9890, border: 0x3d4239, sil: 0x41544a, tex: 'concrete',
+    cars: [0x7a4a32, 0x5a6a72, 0x8a8270, 0x6a3a32], block: 0x8c8a84, boxes: [0x8a3a2a, 0x2f5a7a, 0x4a6a3a, 0xa0662a], dust: { n: 50, c: 0xf4f4e0, s: 2.2 } },
+  city: { top: 0x9a7a58, hor: 0xf0d2a2, sun: 0xffe2b0, hemiG: 0x5a4630, wall: 0xa89070, wallTop: 0xc8b090, border: 0x7a6648, sil: 0x8a6c4e, tex: 'sandstone',
+    cars: [0x8a5a3a, 0x9a8a6a, 0x6a5a4a, 0xa06a3a], block: 0xb09a78, boxes: [0x9a5a3a, 0x7a6a4a, 0x5a6a6a, 0xa07a3a], dust: { n: 260, c: 0xe0c090, s: 3 } },
+  port: { top: 0x34405a, hor: 0x9aa2b0, sun: 0xe8eeff, hemiG: 0x34363c, wall: 0x5f6873, wallTop: 0x8a929c, border: 0x2e3238, sil: 0x3a4250, tex: 'metal',
+    cars: [0x4a5a6a, 0x7a7e84, 0x3a4a5a, 0x8a3a32], block: 0x8a8c90, boxes: [0x2a5a8a, 0xb0802a, 0x8a2a2a, 0x3a7a5a], dust: { n: 0 } },
+};
+const WEATHERS = [
+  { id: 'clear', name: '晴朗', w: 5 },
+  { id: 'dusk', name: '黃昏', w: 3 },
+  { id: 'overcast', name: '陰天', w: 3 },
+];
+
 const R3 = {
   ready: false,
   fps: 60,
@@ -74,7 +89,13 @@ const R3 = {
       this.scene.fog.far = g.far;
       this.camera.far = g.far + 60;
       this.camera.updateProjectionMatrix();
+      this.scaleSky();
     }
+  },
+  scaleSky() {
+    const far = this.gfxConf().far;
+    if (this.skyDome) this.skyDome.scale.setScalar(far + 20);
+    if (this.skyline) this.skyline.scale.setScalar(far * 0.85 / 1000);
   },
 
   mat(color, opts = {}) { return new THREE.MeshLambertMaterial(Object.assign({ color }, opts)); },
@@ -90,20 +111,37 @@ const R3 = {
   build(raid) {
     if (!this.ready) return;
     const M = raid.map;
-    const sky = { dam: 0x9fb2b4, city: 0xc8b088, port: 0x7d8592 }[raid.mapId] || 0x999999;
+    const TH = THEMES[raid.mapId] || THEMES.dam;
+    this.theme = TH;
+    // 每場隨機天氣與時段
+    let wr = Math.random() * WEATHERS.reduce((a, w) => a + w.w, 0), wea = WEATHERS[0];
+    for (const w of WEATHERS) { wr -= w.w; if (wr <= 0) { wea = w; break; } }
+    this.weather = wea;
+    const top = new THREE.Color(TH.top), hor = new THREE.Color(TH.hor), sunC = new THREE.Color(TH.sun);
+    let sunI = 0.7, hemiI = 0.8, fogNear = 220;
+    this.sunDir = new THREE.Vector3(0.6, 1, 0.35).normalize();
+    if (wea.id === 'dusk') {
+      top.lerp(new THREE.Color(0x3a3466), 0.6); hor.lerp(new THREE.Color(0xf09458), 0.6); sunC.set(0xffa868);
+      sunI = 0.75; hemiI = 0.6; this.sunDir.set(0.9, 0.16, 0.4).normalize();
+    } else if (wea.id === 'overcast') {
+      top.lerp(new THREE.Color(0x8a9098), 0.7); hor.lerp(new THREE.Color(0xa9adb0), 0.6); sunC.lerp(new THREE.Color(0xcccccc), 0.6);
+      sunI = 0.35; hemiI = 0.95; fogNear = 120;
+    }
+    this.hor = hor;
     const scene = new THREE.Scene();
     this.scene = scene;
-    scene.background = new THREE.Color(sky);
+    scene.background = hor.clone();
     const gc = this.gfxConf();
-    scene.fog = new THREE.Fog(sky, 220, gc.far);
+    scene.fog = new THREE.Fog(hor.clone(), fogNear, gc.far);
     this.camera.far = gc.far + 60;
     this.resize();
     this.camera.updateProjectionMatrix();
-    scene.add(new THREE.HemisphereLight(0xfff4e0, 0x404030, 0.85));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.65);
-    sun.position.set(0.6, 1, 0.35);
+    scene.add(new THREE.HemisphereLight(new THREE.Color(0xfff4e0).lerp(sunC, 0.4), TH.hemiG, hemiI));
+    const sun = new THREE.DirectionalLight(sunC, sunI);
+    sun.position.copy(this.sunDir);
     scene.add(sun);
     scene.add(this.camera);
+    this.buildSky(raid.mapId, top, hor, sunC, wea);
 
     // 地面貼圖
     const TS = gc.tex;
@@ -117,6 +155,7 @@ const R3 = {
       const hh = Math.sin(gx * 12.9898 + gy * 78.233) * 43758.5453;
       if (hh - Math.floor(hh) < 0.45) { g.fillStyle = M.ground2; g.fillRect(gx * T * k, gy * T * k, T * k, T * k); }
     }
+    this.groundExtras(g, k, raid.mapId, TS);
     for (const d of World.decals) {
       if (d.k === 0) { g.fillStyle = 'rgba(90,110,60,0.45)'; g.beginPath(); g.arc(d.x * k, d.y * k, d.s * k, 0, TAU); g.fill(); }
       else if (d.k === 1) { g.fillStyle = 'rgba(0,0,0,0.18)'; g.beginPath(); g.ellipse(d.x * k, d.y * k, d.s * k, d.s * k * 0.5, d.a, 0, TAU); g.fill(); }
@@ -159,14 +198,16 @@ const R3 = {
     // 牆壁（以 InstancedMesh 一次繪製）
     const kinds = { wall: [], cover: [], border: [] };
     for (const w of World.walls) kinds[w.kind].push(w);
-    const conf = { wall: [H.WALL, 0x6d6c70], cover: [H.COVER, 0x7d7465], border: [H.BORDER, 0x3a3836] };
-    for (const kind in kinds) {
+    const conf = { wall: [H.WALL, TH.wall], border: [H.BORDER, TH.border] };
+    const wallTex = this.wallTexture(TH.tex);
+    this.buildCovers(kinds.cover, TH);
+    for (const kind of ['wall', 'border']) {
       const list = kinds[kind];
       if (!list.length) continue;
-      const im = new THREE.InstancedMesh(this.geo.box, this.mat(0xffffff), list.length);
+      const im = new THREE.InstancedMesh(this.geo.box, this.mat(0xffffff, { map: wallTex }), list.length);
       const [hgt, base] = conf[kind];
       list.forEach((w, i) => {
-        const hh = kind === 'cover' ? hgt * (0.75 + ((w.id * 37) % 10) / 20) : hgt;
+        const hh = hgt;
         this.m4.compose(this.v.set(w.x + w.w / 2, hh / 2, w.y + w.h / 2), this.q.identity(), this.s3.set(w.w, hh, w.h));
         im.setMatrixAt(i, this.m4);
         const shade = 0.85 + ((w.id * 53) % 15) / 50;
@@ -179,7 +220,7 @@ const R3 = {
     // 牆頂邊線（讓建築更有立體感）
     {
       const list = kinds.wall;
-      const im = new THREE.InstancedMesh(this.geo.box, this.mat(0x9a9890), list.length);
+      const im = new THREE.InstancedMesh(this.geo.box, this.mat(TH.wallTop), list.length);
       list.forEach((w, i) => {
         this.m4.compose(this.v.set(w.x + w.w / 2, H.WALL + 2, w.y + w.h / 2), this.q.identity(), this.s3.set(w.w + 4, 4, w.h + 4));
         im.setMatrixAt(i, this.m4);
@@ -271,12 +312,257 @@ const R3 = {
     this.debrisMesh.count = 0;
     scene.add(this.debrisMesh);
     this.debrisList = [];
+    this.buildScatter(raid.mapId, TH);
+    this.buildAmbient(TH, dot);
+    this.scaleSky();
     this.kick = 0;
     this.fpsAcc = 0; this.fpsN = 0; this.slowT = 0; this.gfxCool = 8;
     this.vmBaseX = Input.touch ? 1.1 : 1.4;
     this.hitT = 0; this.hitCrit = false; this.killT = 0;
     this.recoilZ = 0; this.bob = 0;
     this.losCache = new Map();
+  },
+
+  // 漸層天空、太陽與跟著攝影機的遠景輪廓
+  buildSky(mapId, top, hor, sunC, wea) {
+    const scene = this.scene;
+    const geo = new THREE.SphereGeometry(1, 24, 14);
+    const pos = geo.attributes.position, cols = new Float32Array(pos.count * 3);
+    const below = hor.clone().multiplyScalar(0.75), c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      if (y >= 0) c.copy(hor).lerp(top, Math.pow(y, 0.55)); else c.copy(hor).lerp(below, Math.min(1, -y * 4));
+      cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+    this.skyDome = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    this.skyDome.renderOrder = -2;
+    scene.add(this.skyDome);
+    if (wea.id !== 'overcast') {
+      const sm = this.basic(sunC.clone().lerp(new THREE.Color(0xffffff), 0.5), { fog: false, transparent: true, opacity: 0.9, depthWrite: false });
+      // 太陽掛在天空球上，跟著一起縮放
+      const disc = new THREE.Mesh(this.geo.disk, sm);
+      disc.renderOrder = -1;
+      disc.position.copy(this.sunDir).multiplyScalar(0.97);
+      disc.scale.setScalar(wea.id === 'dusk' ? 0.05 : 0.032);
+      disc.lookAt(0, 0, 0);
+      this.skyDome.add(disc);
+    }
+    // 遠景：以半徑 1000 建立，之後依可視距離縮放
+    const grp = new THREE.Group();
+    this.skyline = grp;
+    this.blinkers = [];
+    const mix = k => new THREE.Color(this.theme.sil).lerp(hor, k);
+    const solid = k => this.basic(mix(k), { fog: false });
+    const put = (geo, mat, a, r, y, sx, sy, sz, rz = 0) => {
+      const m = this.mesh(geo, mat, Math.cos(a) * r, y, Math.sin(a) * r, sx, sy, sz);
+      m.rotation.set(0, -a, rz);
+      grp.add(m); return m;
+    };
+    const cone = new THREE.ConeGeometry(1, 1, 7);
+    if (mapId === 'dam') {
+      for (let i = 0; i < 26; i++) { const a = i / 26 * TAU + Math.random() * 0.2, h = 120 + Math.random() * 200; put(cone, solid(0.55), a, 1060, h / 2 - 10, 120 + Math.random() * 90, h, 120 + Math.random() * 90); }
+      for (let i = 0; i < 30; i++) { const a = i / 30 * TAU + Math.random() * 0.2, h = 70 + Math.random() * 120; put(cone, solid(0.3), a, 960, h / 2 - 10, 70 + Math.random() * 60, h, 70 + Math.random() * 60); }
+      // 大壩
+      const a0 = Math.random() * TAU;
+      put(this.geo.box, solid(0.25), a0, 900, 70, 40, 160, 520);
+      put(this.geo.box, solid(0.15), a0, 880, 152, 30, 8, 530);
+      for (let i = -2; i <= 2; i++) put(this.geo.box, solid(0.35), a0 + i * 0.12, 885, 40, 8, 80, 18);
+      // 電塔
+      for (let i = 0; i < 6; i++) { const a = a0 + 1.2 + i * 0.35; put(this.geo.box, solid(0.3), a, 900, 90, 6, 180, 6); put(this.geo.box, solid(0.3), a, 900, 170, 4, 4, 60); }
+    } else if (mapId === 'city') {
+      for (let i = 0; i < 70; i++) {
+        const a = Math.random() * TAU, h = 70 + Math.pow(Math.random(), 1.6) * 300, w = 30 + Math.random() * 80;
+        put(this.geo.box, solid(0.2 + Math.random() * 0.35), a, 900 + Math.random() * 120, h / 2 - 10, w, h, w, (Math.random() - 0.5) * 0.25);
+      }
+      for (let i = 0; i < 18; i++) put(this.geo.sphereLo, solid(0.15), i / 18 * TAU, 820, -5, 120, 35 + Math.random() * 30, 160);
+    } else {
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * TAU;
+        put(this.geo.box, solid(0.15), a, 920, 200, 26, 420, 26);
+        put(this.geo.box, solid(0.15), a, 920, 400, 70, 8, 8);
+        const rk = put(this.geo.cyl, solid(0.05), a + 0.05, 920, 170, 18, 300, 18);
+        void rk;
+        put(cone, solid(0.05), a + 0.05, 920, 350, 18, 60, 18);
+        const lt = put(this.geo.sphereLo, this.basic(0xff3030, { fog: false }), a, 920, 416, 6, 6, 6);
+        this.blinkers.push(lt);
+      }
+      for (let i = 0; i < 8; i++) {
+        const a = Math.random() * TAU;
+        put(this.geo.box, solid(0.35), a, 950, 110, 10, 220, 10);
+        put(this.geo.box, solid(0.35), a, 950, 215, 10, 10, 160);
+      }
+      for (let i = 0; i < 24; i++) put(this.geo.box, solid(0.4), Math.random() * TAU, 980, 30, 80 + Math.random() * 120, 60 + Math.random() * 40, 60);
+    }
+    scene.add(grp);
+  },
+
+  // 牆面貼圖：底部髒污、樓層接縫、頂部亮邊（以實例顏色上色）
+  wallTexture(kind) {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 128);
+    for (let i = 0; i < 400; i++) { const v = 200 + Math.random() * 55 | 0; g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(Math.random() * 64, Math.random() * 128, 2, 2); }
+    const grd = g.createLinearGradient(0, 80, 0, 128);
+    grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(40,30,20,0.45)');
+    g.fillStyle = grd; g.fillRect(0, 80, 64, 48);
+    g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(0, 0, 64, 6);
+    if (kind === 'metal') {
+      g.fillStyle = 'rgba(0,0,0,0.18)'; for (let x = 0; x < 64; x += 16) g.fillRect(x, 0, 2, 128);
+      for (let x = -16; x < 64; x += 16) { g.fillStyle = '#d9b02a'; g.beginPath(); g.moveTo(x, 128); g.lineTo(x + 8, 128); g.lineTo(x + 16, 116); g.lineTo(x + 8, 116); g.fill(); }
+    } else if (kind === 'sandstone') {
+      g.fillStyle = 'rgba(80,50,20,0.15)'; for (let y = 10; y < 128; y += 9) g.fillRect(0, y, 64, 1 + Math.random() * 2);
+      g.fillStyle = 'rgba(230,200,150,0.5)'; g.fillRect(0, 108, 64, 20);
+    } else {
+      g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(0, 42, 64, 2); g.fillRect(0, 84, 64, 2);
+      g.fillStyle = 'rgba(70,95,50,0.35)'; for (let i = 0; i < 12; i++) g.fillRect(Math.random() * 64, 110 + Math.random() * 18, 6, 18);
+    }
+    const t = new THREE.CanvasTexture(c);
+    return t;
+  },
+
+  // 掩體依種類做成車輛殘骸、水泥護欄、貨櫃、桌子
+  buildCovers(list, TH) {
+    const boxes = [], conts = [];
+    const pick = (arr, id) => arr[(id * 7) % arr.length];
+    for (const w of list) {
+      const cx = w.x + w.w / 2, cz = w.y + w.h / 2, top = World.wallTop(w);
+      const shade = 0.85 + ((w.id * 53) % 15) / 50;
+      if (w.sub === 'car') {
+        const col = pick(TH.cars, w.id);
+        boxes.push([cx, 12, cz, w.w, 24, w.h, col, shade]);
+        const along = w.w > w.h;
+        boxes.push([cx + (along ? w.w * 0.08 : 0), 24 + 8, cz + (along ? 0 : w.h * 0.08), along ? w.w * 0.5 : w.w * 0.85, 16, along ? w.h * 0.85 : w.h * 0.5, 0x2a3038, 1]);
+        boxes.push([cx, 3, cz, w.w + 2, 6, w.h + 2, 0x1c1c1c, 1]);
+      } else if (w.sub === 'block') {
+        boxes.push([cx, 13, cz, w.w, 26, w.h, TH.block, shade]);
+        boxes.push([cx, 26 + (top - 26) / 2, cz, w.w * 0.55, top - 26, w.h * 0.55, TH.block, shade * 1.08]);
+      } else if (w.sub === 'container') {
+        conts.push([cx, top / 2, cz, w.w, top, w.h, pick(TH.boxes, w.id), shade]);
+      } else if (w.sub === 'desk') {
+        boxes.push([cx, top - 2, cz, w.w, 4, w.h, 0x6a5040, 1]);
+        boxes.push([cx, (top - 4) / 2, cz, w.w * 0.9, top - 4, w.h * 0.8, 0x4a3a30, 1]);
+      } else if (w.sub === 'barrier') {
+        boxes.push([cx, top / 2, cz, w.w, top, w.h, 0xa88a2a, shade]);
+        boxes.push([cx, top - 4, cz, w.w + 1, 8, w.h + 1, 0x222222, 1]);
+      } else boxes.push([cx, top / 2, cz, w.w, top, w.h, 0x7d7465, shade]);
+    }
+    const make = (arr, mat) => {
+      if (!arr.length) return;
+      const im = new THREE.InstancedMesh(this.geo.box, mat, arr.length);
+      arr.forEach((b, i) => {
+        this.m4.compose(this.v.set(b[0], b[1], b[2]), this.q.identity(), this.s3.set(b[3], b[4], b[5]));
+        im.setMatrixAt(i, this.m4);
+        im.setColorAt(i, this.col.setHex(b[6]).multiplyScalar(b[7]));
+      });
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      this.scene.add(im);
+    };
+    make(boxes, this.mat(0xffffff));
+    // 貨櫃：直條紋鐵皮
+    const c = document.createElement('canvas'); c.width = 64; c.height = 32;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, 64, 32);
+    g.fillStyle = 'rgba(0,0,0,0.22)'; for (let x = 0; x < 64; x += 5) g.fillRect(x, 0, 2, 32);
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, 0, 64, 2); g.fillRect(0, 30, 64, 2);
+    g.fillStyle = 'rgba(90,50,20,0.25)'; for (let i = 0; i < 8; i++) g.fillRect(Math.random() * 64, 20 + Math.random() * 10, 4, 12);
+    make(conts, this.mat(0xffffff, { map: new THREE.CanvasTexture(c) }));
+  },
+
+  // 地面貼圖的地圖特色
+  groundExtras(g, k, mapId, TS) {
+    if (mapId === 'dam') {
+      for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(${70 + Math.random() * 30 | 0},${100 + Math.random() * 30 | 0},50,0.35)`; g.beginPath(); g.arc(Math.random() * TS, Math.random() * TS, (20 + Math.random() * 60) * k, 0, TAU); g.fill(); }
+      for (let i = 0; i < 30; i++) { g.fillStyle = 'rgba(80,100,110,0.45)'; g.beginPath(); g.ellipse(Math.random() * TS, Math.random() * TS, (15 + Math.random() * 30) * k, (8 + Math.random() * 14) * k, Math.random() * 3, 0, TAU); g.fill(); }
+    } else if (mapId === 'city') {
+      g.strokeStyle = 'rgba(255,230,180,0.12)'; g.lineWidth = Math.max(1, 3 * k);
+      for (let y = 0; y < World.H; y += 26) {
+        g.beginPath();
+        for (let x = 0; x <= World.W; x += 80) { const yy = y + Math.sin(x * 0.01 + y) * 8; x ? g.lineTo(x * k, yy * k) : g.moveTo(0, yy * k); }
+        g.stroke();
+      }
+    } else {
+      g.strokeStyle = 'rgba(0,0,0,0.16)'; g.lineWidth = Math.max(1, 2 * k);
+      g.beginPath();
+      for (let x = 0; x <= World.W; x += 100) { g.moveTo(x * k, 0); g.lineTo(x * k, TS); }
+      for (let y = 0; y <= World.H; y += 100) { g.moveTo(0, y * k); g.lineTo(TS, y * k); }
+      g.stroke();
+      for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(10,10,15,0.3)'; g.beginPath(); g.ellipse(Math.random() * TS, Math.random() * TS, (10 + Math.random() * 30) * k, (6 + Math.random() * 16) * k, Math.random() * 3, 0, TAU); g.fill(); }
+    }
+  },
+
+  // 純裝飾物（沒有碰撞）：草叢、沙堆、路燈
+  buildScatter(mapId, TH) {
+    const lv = this.gfxLv();
+    const items = [];
+    if (mapId === 'dam') {
+      const n = [150, 450, 800][lv];
+      for (let i = 0; i < n * 3 && items.length < n; i++) {
+        const x = Math.random() * World.W, y = Math.random() * World.H;
+        if (World.pointBlocked(x, y, 10)) continue;
+        if (World.floors.some(f => x > f.x && x < f.x + f.w && y > f.y && y < f.y + f.h)) continue;
+        const s = 3 + Math.random() * 4;
+        items.push(['g', x, y, s, 7 + Math.random() * 10]);
+      }
+    } else if (mapId === 'city') {
+      for (const w of World.walls) {
+        if (w.kind !== 'wall' || Math.random() > 0.35) continue;
+        const along = w.w > w.h, side = Math.random() < 0.5 ? -1 : 1;
+        const x = along ? w.x + w.w * (0.2 + Math.random() * 0.6) : w.x + w.w / 2 + side * (w.w / 2 + 6);
+        const y = along ? w.y + w.h / 2 + side * (w.h / 2 + 6) : w.y + w.h * (0.2 + Math.random() * 0.6);
+        items.push(['s', x, y, along ? 40 + Math.random() * 40 : 18, along ? 18 : 40 + Math.random() * 40]);
+      }
+    } else {
+      const C = World.CELL;
+      for (let i = 1; i < World.W / C; i++) for (let j = 1; j < World.H / C; j++) {
+        if ((i + j) % 2) continue;
+        const x = i * C + 44, y = j * C + 44;
+        if (World.pointBlocked(x, y, 8)) continue;
+        items.push(['l', x, y]);
+      }
+    }
+    const grass = items.filter(t => t[0] === 'g'), sand = items.filter(t => t[0] === 's'), lamps = items.filter(t => t[0] === 'l');
+    if (grass.length) {
+      const im = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 4), this.mat(0xffffff), grass.length);
+      grass.forEach((t, i) => {
+        this.q.setFromAxisAngle(this.yAxis, Math.random() * 3);
+        this.m4.compose(this.v.set(t[1], t[4] / 2, t[2]), this.q, this.s3.set(t[3], t[4], t[3]));
+        im.setMatrixAt(i, this.m4);
+        im.setColorAt(i, this.col.setRGB(0.28 + Math.random() * 0.12, 0.4 + Math.random() * 0.15, 0.18));
+      });
+      this.scene.add(im);
+    }
+    if (sand.length) {
+      const im = new THREE.InstancedMesh(this.geo.sphereLo, this.mat(new THREE.Color(this.theme.wall).lerp(new THREE.Color(0xe8c890), 0.6)), sand.length);
+      sand.forEach((t, i) => { this.m4.compose(this.v.set(t[1], 0, t[2]), this.q.identity(), this.s3.set(t[3] / 2, 10 + Math.random() * 10, t[4] / 2)); im.setMatrixAt(i, this.m4); });
+      this.scene.add(im);
+    }
+    if (lamps.length) {
+      const pole = new THREE.InstancedMesh(this.geo.cyl, this.mat(0x50555c), lamps.length * 2);
+      const head = new THREE.InstancedMesh(this.geo.box, this.basic(0xfff0c0), lamps.length);
+      lamps.forEach((t, i) => {
+        this.m4.compose(this.v.set(t[1], 75, t[2]), this.q.identity(), this.s3.set(2.5, 150, 2.5)); pole.setMatrixAt(i * 2, this.m4);
+        this.m4.compose(this.v.set(t[1] - 14, 150, t[2] - 14), this.q.setFromAxisAngle(this.yAxis, Math.PI / 4), this.s3.set(1.6, 1.6, 40)); pole.setMatrixAt(i * 2 + 1, this.m4);
+        this.m4.compose(this.v.set(t[1] - 26, 148, t[2] - 26), this.q.identity(), this.s3.set(10, 3, 10)); head.setMatrixAt(i, this.m4);
+      });
+      this.scene.add(pole); this.scene.add(head);
+    }
+  },
+
+  // 漂浮的沙塵／花粉
+  buildAmbient(TH, dot) {
+    this.ambient = null;
+    const n = Math.round((TH.dust.n || 0) * [0.4, 0.8, 1][this.gfxLv()]);
+    if (!n) return;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 700; pos[i * 3 + 1] = Math.random() * 140; pos[i * 3 + 2] = (Math.random() - 0.5) * 700; }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.ambient = new THREE.Points(geo, new THREE.PointsMaterial({ size: TH.dust.s, map: dot, color: TH.dust.c, transparent: true, opacity: 0.55, depthWrite: false }));
+    this.ambient.frustumCulled = false;
+    this.ambientPos = pos;
+    this.scene.add(this.ambient);
   },
 
   buildViewmodel() {
@@ -452,12 +738,28 @@ const R3 = {
     this.bob += dt * (moving ? (p.sprint ? 14 : 9) : 0);
     const bobY = moving ? Math.sin(this.bob) * (p.sprint ? 2.2 : 1.2) : 0;
     const sh = raid.cam.shake;
-    cam.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, H.EYE + bobY + (Math.random() - 0.5) * sh * 0.3, p.y);
+    const dk = p.dodge ? Math.sin((1 - p.dodge.t / p.dodge.max) * Math.PI) : 0;
+    cam.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, (p.eye || H.EYE) - dk * 14 + bobY + (Math.random() - 0.5) * sh * 0.3, p.y);
     this.kick = Math.max(0, this.kick - dt * 0.35);
     const vp = (p.pitch || 0) + this.kick;
     const pc = Math.cos(vp), ps = Math.sin(vp);
     this.v.set(cam.position.x + Math.cos(p.ang) * pc * 100, cam.position.y + ps * 100, cam.position.z + Math.sin(p.ang) * pc * 100);
     cam.lookAt(this.v);
+    if (dk) cam.rotateZ(-dk * 0.25 * (p.dodge.side || 0.4));
+    if (this.skyDome) this.skyDome.position.copy(cam.position);
+    if (this.skyline) this.skyline.position.set(cam.position.x, 0, cam.position.z);
+    for (const b of this.blinkers) b.visible = Math.floor(now * 1.5 + b.id) % 2 === 0;
+    if (this.ambient) {
+      const ap = this.ambientPos, cx = cam.position.x, cz = cam.position.z;
+      for (let i = 0; i < ap.length; i += 3) {
+        ap[i] += (10 + Math.sin(now + i) * 6) * dt; ap[i + 1] += Math.sin(now * 0.7 + i) * 3 * dt;
+        // 以攝影機為中心環繞，粒子永遠在身邊
+        const rx = ap[i] - cx, rz = ap[i + 2] - cz;
+        if (rx > 350) ap[i] -= 700; else if (rx < -350) ap[i] += 700;
+        if (rz > 350) ap[i + 2] -= 700; else if (rz < -350) ap[i + 2] += 700;
+      }
+      this.ambient.geometry.attributes.position.needsUpdate = true;
+    }
 
     // 槍模型
     const w = raid.curW(p);
@@ -517,7 +819,7 @@ const R3 = {
       if (m.userData.rotors) for (const r of m.userData.rotors) r.rotation.y = now * 30;
       if (m.userData.eye) m.userData.eye.material.color.setHex(e.arm > 0 && Math.floor(now * 16) % 2 ? 0xffffff : 0xff3322);
       if (m.userData.suit) m.userData.suit.color.setHex(e.revealed ? (e.hostile ? 0xc8603a : 0xc8b850) : 0x8a8078);
-      if (e.kind === 'raider') m.userData.body.position.y = e.healT > 0 ? -6 : 0;
+      if (e.kind === 'raider') { m.userData.body.position.y = e.healT > 0 ? -6 : 0; m.userData.body.scale.y = e.crouch ? 0.7 : 1; }
     }
     for (const [e, m] of this.eMeshes) {
       if (!alive.has(e)) { this.scene.remove(m); this.eMeshes.delete(e); }
@@ -692,6 +994,7 @@ const R3 = {
       const s = this.project(e.x, top, e.y);
       if (!s || s.x < -50 || s.x > W + 50) continue;
       if (!this.seen(e, p)) continue;
+      if (e.state === 'ambush' && !e.revealed) continue;
       const sc = clamp(300 / Math.max(80, d), 0.5, 1.4);
       if (e.kind === 'raider') {
         ctx.font = `bold ${Math.round(12 * sc + 2)}px sans-serif`;
@@ -705,6 +1008,12 @@ const R3 = {
           ctx.fillStyle = '#fff'; ctx.fillText(e.emote, s.x, s.y - 28);
         }
       } else {
+        if (e.callT > 0) {
+          const k = (now * 2) % 1;
+          ctx.strokeStyle = `rgba(255,90,60,${1 - k})`; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(s.x, s.y + 20, 10 + k * 40, 0, TAU); ctx.stroke();
+          ctx.font = 'bold 13px sans-serif'; ctx.fillStyle = '#f96'; ctx.fillText('📡 求援中', s.x, s.y - 26);
+        }
         if (e.state === 'attack' && e.seenT > 0) { ctx.font = 'bold 22px sans-serif'; ctx.fillStyle = '#ff4'; ctx.fillText('!', s.x, s.y - 10); }
         else if (e.state === 'investigate') { ctx.font = 'bold 18px sans-serif'; ctx.fillStyle = '#fc6'; ctx.fillText('?', s.x, s.y - 10); }
       }
@@ -766,7 +1075,7 @@ const R3 = {
     if (p.alive) {
       const w = raid.curW(p);
       const st = w ? raid.wStats(w, p) : null;
-      const spr = st ? (st.spr + p.bloom) * (p.moving ? 1.35 : 1) * (p.sprint ? 2 : 1) : 4;
+      const spr = st ? (st.spr + p.bloom) * (p.moving ? 1.35 : 1) * (p.sprint ? 2 : 1) * (p.crouch ? 0.6 : 1) : 4;
       const px = Math.tan(spr * Math.PI / 180) / Math.tan(this.camera.fov * Math.PI / 360) * Hh / 2;
       const gap = 5 + px;
       const cx = W / 2, cy = Hh / 2;
@@ -775,6 +1084,7 @@ const R3 = {
       lines();
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; lines();
       ctx.fillStyle = '#fff'; ctx.fillRect(cx - 1, cy - 1, 2, 2);
+      if (p.crouch) { ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = 'rgba(150,210,255,0.9)'; ctx.fillText('蹲下', cx, cy + gap + 26); }
       // 命中提示
       this.hitT -= dt; this.killT -= dt;
       if (this.hitT > 0 || this.killT > 0) {

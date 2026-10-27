@@ -56,6 +56,8 @@ const Raid = {
     this.queenSeen = false;
     this.hurtA = 0; this.hurtDir = null;
     this.openC = null;
+    this.helpCd = 0; this.extAmbush = false;
+    Sfx.surface = mapId;
 
     const L = S.loadout;
     const mk = w => w ? { k: w.k, lvl: w.lvl || 1, ammo: WEAPONS[w.k].mag } : null;
@@ -71,6 +73,7 @@ const Raid = {
       fireT: 0, reloadT: 0, burst: 0, burstT: 0, bloom: 0, using: null, search: null,
       bag: L.bag.map(e => Object.assign({}, e)), pocket: L.pocket.map(e => Object.assign({}, e)),
       extractT: 0, hitT: 0, moving: false, sprint: false,
+      crouch: false, eye: H.EYE, dodge: null, dodgeCd: 0, iframe: 0, stepD: 0,
     };
     S.loadout = { w: [null, null], shield: null, bag: [], pocket: [] };
     // 空降後面向地圖中央
@@ -86,7 +89,7 @@ const Raid = {
     Input.resetTouch();
     Input.requestLock();
     this.say(`已空降至 ${this.map.name}。搜刮物資並在 ${Math.round(RAID_TIME / 60)} 分鐘內撤離！`, '#9fe');
-    this.banner(this.map.name, '找到撤離電梯並活著回來');
+    this.banner(this.map.name, `${R3.weather ? R3.weather.name + ' · ' : ''}找到撤離電梯並活著回來`);
     UI.showCtrlHint();
     this.last = performance.now();
   },
@@ -121,6 +124,30 @@ const Raid = {
     }
     const nr = 3 + Math.round(d * 1.5);
     for (let i = 0; i < nr; i++) this.spawnRaider();
+    // 伏擊者：蹲在撤離電梯或高價值區附近等你
+    const na = Math.max(1, Math.round(d * 1.2));
+    for (let i = 0; i < na; i++) this.setupAmbush(this.spawnRaider());
+  },
+
+  setupAmbush(r) {
+    const spots = World.extracts.map(e => ({ x: e.x, y: e.y, min: 150, max: 290 }));
+    for (const z of World.hvZones) if (!z.boss) spots.push({ x: z.x + z.w / 2, y: z.y + z.h / 2, min: 60, max: 220 });
+    for (let tries = 0; tries < 60; tries++) {
+      const c = spots[Math.floor(rand() * spots.length)];
+      const a = rand() * TAU, d = rr(c.min, c.max);
+      const x = clamp(c.x + Math.cos(a) * d, 40, World.W - 40), y = clamp(c.y + Math.sin(a) * d, 40, World.H - 40);
+      if (World.pointBlocked(x, y, 20)) continue;
+      // 優先挑緊貼掩體的位置
+      if (tries < 45 && !World.pointBlocked(x, y, 46)) continue;
+      if (Math.hypot(x - this.p.x, y - this.p.y) < 900) continue;
+      r.x = x; r.y = y; r.lx = x; r.ly = y;
+      r.hostile = true; r.state = 'ambush'; r.crouch = true;
+      r.ambush = { x, y, face: Math.atan2(c.y - y, c.x - x) };
+      r.ang = r.ambush.face;
+      r.leaveAt = RAID_TIME * 0.9;
+      return r;
+    }
+    return r;
   },
 
   spotIn(z) {
@@ -213,11 +240,12 @@ const Raid = {
     }
     if (this.time <= 0) { this.end(false, '地表封鎖，你被困在外面了'); return; }
 
+    this.helpCd -= dt;
     this.updatePlayer(dt);
     if (!this.active) return;
     if (UI.mode === 'loot' && this.openC && Math.hypot(this.openC.x - p.x, this.openC.y - p.y) > 90) UI.closePanel();
-    for (const e of this.arcs) if (e.alive) this.updateArc(e, dt);
-    for (const r of this.raiders) if (r.alive) this.updateRaider(r, dt);
+    for (const e of this.arcs) if (e.alive) { this.updateArc(e, dt); this.enemySounds(e, dt); }
+    for (const r of this.raiders) if (r.alive) { this.updateRaider(r, dt); this.enemySounds(r, dt); }
     this.separate();
     this.updateBullets(dt);
     this.updateLobs(dt);
@@ -303,6 +331,20 @@ const Raid = {
     // 衝刺（只在往前時）
     const wantSprint = Input.touch ? (mag > 0.9 && mv.y < -0.7) : !!(Input.keys.ShiftLeft || Input.keys.ShiftRight) && mv.y < 0;
     p.sprint = wantSprint && mag > 0.1 && p.stam > 1 && !p.using && !firing;
+    if (Input.take('crouch')) { p.crouch = !p.crouch; Sfx.play('step', 0.5); }
+    if (p.sprint) p.crouch = false;
+    p.eye += ((p.crouch ? 28 : H.EYE) - p.eye) * Math.min(1, dt * 12);
+    p.dodgeCd -= dt; p.iframe -= dt;
+    if (Input.take('dodge') && !p.dodge && p.dodgeCd <= 0 && p.stam >= 20 && !panel) {
+      // 閃避翻滾：朝移動方向（沒移動時向後）快速位移，短暫無敵
+      const dx = mag > 0.1 ? mv.x / mag : 0, dy = mag > 0.1 ? mv.y / mag : 1;
+      const c0 = Math.cos(p.ang), s0 = Math.sin(p.ang);
+      p.dodge = { t: 0.32, max: 0.32, x: c0 * -dy + -s0 * dx, y: s0 * -dy + c0 * dx, side: dx };
+      p.stam -= 20; p.stamCd = 0.8; p.dodgeCd = 0.75; p.iframe = 0.28;
+      p.crouch = false; p.using = null; p.search = null;
+      Sfx.play('dodge');
+      this.noise(p.x, p.y, 160, p);
+    }
     if (p.sprint) { p.stam -= 28 * dt; p.stamCd = 1; }
     else { p.stamCd -= dt; if (p.stamCd <= 0) p.stam = Math.min(p.stamMax, p.stam + 20 * (1 + skillLv('stamina') * 0.2) * dt); }
     let spd = 165 * p.slow * (p.sprint ? 1.5 : 1);
@@ -310,13 +352,28 @@ const Raid = {
     if (p.search) spd *= 0.6;
     if (firing) spd *= 0.85;
     if (mv.y > 0) spd *= 0.8;
+    if (p.crouch) spd *= 0.55;
     p.moving = mag > 0.1;
     const ca = Math.cos(p.ang), sa = Math.sin(p.ang);
-    const wx = ca * -mv.y + -sa * mv.x, wy = sa * -mv.y + ca * mv.x;
+    let wx = ca * -mv.y + -sa * mv.x, wy = sa * -mv.y + ca * mv.x;
+    if (p.dodge) {
+      const k = p.dodge.t / p.dodge.max;
+      wx = p.dodge.x; wy = p.dodge.y; spd = 230 + 420 * k;
+      p.dodge.t -= dt; p.moving = true;
+      if (p.dodge.t <= 0) p.dodge = null;
+    }
     p.vx = wx * spd; p.vy = wy * spd;
+    const ox = p.x, oy = p.y;
     p.x += wx * spd * dt; p.y += wy * spd * dt;
     World.resolveCircle(p);
-    if (p.sprint) { p.noiseT = (p.noiseT || 0) - dt; if (p.noiseT <= 0) { p.noiseT = 0.5; this.noise(p.x, p.y, 260, p); } }
+    // 腳步聲與噪音：衝刺最吵、蹲下幾乎無聲
+    p.stepD += Math.hypot(p.x - ox, p.y - oy);
+    const stride = p.sprint ? 78 : p.crouch ? 52 : 62;
+    if (p.stepD > stride) { p.stepD = 0; if (!p.dodge) Sfx.play('step', p.sprint ? 0.55 : p.crouch ? 0.15 : 0.32); }
+    if (p.moving && !p.crouch) {
+      p.noiseT = (p.noiseT || 0) - dt;
+      if (p.noiseT <= 0) { p.noiseT = 0.5; this.noise(p.x, p.y, p.sprint ? 260 : 110, p); }
+    }
 
     // 動作
     if (Input.take('w1')) this.switchTo(0);
@@ -397,13 +454,13 @@ const Raid = {
   assistLv() { return S.settings.assist == null ? 2 : S.settings.assist; },
   pitchTo(t) {
     const [lo, hi] = this.vRange(t);
-    const target = t.kind === 'raider' ? 30 : (lo + hi) / 2;
-    return Math.atan2(target - H.EYE, Math.max(30, Math.hypot(t.x - this.p.x, t.y - this.p.y)));
+    const target = t.kind === 'raider' ? (t.crouch ? 21 : 30) : (lo + hi) / 2;
+    return Math.atan2(target - this.p.eye, Math.max(30, Math.hypot(t.x - this.p.x, t.y - this.p.y)));
   },
 
   // 目標的垂直範圍（用於上下瞄準的命中判定）
   vRange(t) {
-    if (t.kind === 'raider' || t.kind === 'player') return [0, 52];
+    if (t.kind === 'raider' || t.kind === 'player') return [0, t.crouch ? 38 : 52];
     const z = t.z || 0;
     if (t.def.fly) return [H.FLY - t.r * 0.9, H.FLY + t.r * 0.9];
     const top = { tick: 22, pop: t.r * 2 + 10, leaper: 52, sentinel: 54, bastion: 68, queen: 140 }[t.type] || t.r * 2;
@@ -564,6 +621,19 @@ const Raid = {
         if (World.pointBlocked(x, y, 20)) continue;
         const arc = this.spawnArc(rand() < 0.6 ? 'wasp' : 'tick', x, y);
         arc.state = 'investigate'; arc.alert = { x: e.x, y: e.y };
+      }
+      // 有掠手聽到電梯聲，摸過來搶撤離
+      if (!this.extAmbush && rand() < 0.25 + this.map.danger * 0.2) {
+        this.extAmbush = true;
+        const r = this.spawnRaider(true);
+        for (let i = 0; i < 20; i++) {
+          const a = rand() * TAU, d = rr(500, 700);
+          const x = clamp(e.x + Math.cos(a) * d, 50, World.W - 50), y = clamp(e.y + Math.sin(a) * d, 50, World.H - 50);
+          if (World.pointBlocked(x, y, 20)) continue;
+          r.x = x; r.y = y; r.lx = x; r.ly = y; break;
+        }
+        r.hostile = true; r.state = 'hunt'; r.lastSeen = { x: e.x + rr(-60, 60), y: e.y + rr(-60, 60) };
+        setTimeout(() => this.active && r.alive && this.say('👂 附近傳來腳步聲……有人朝電梯摸過來了', '#fc8'), 6000);
       }
     } else if (Math.hypot(e.x - this.p.x, e.y - this.p.y) < 1500) {
       this.say(`有掠手呼叫了${e.name}`, '#fc8');
@@ -745,8 +815,8 @@ const Raid = {
   shoot(a, w, st) {
     const d = st.d;
     let spr = st.spr;
-    if (a.kind === 'player') { spr += a.bloom; if (a.moving) spr *= 1.35; if (a.sprint) spr *= 2; a.bloom = Math.min(8, a.bloom + (d.auto ? 0.7 : 0.4) * (1 - 0.15 * ((w.lvl || 1) - 1))); }
-    else spr += a.kind === 'raider' ? 3.5 : 0;
+    if (a.kind === 'player') { spr += a.bloom; if (a.moving) spr *= 1.35; if (a.sprint) spr *= 2; if (a.crouch) spr *= 0.6; a.bloom = Math.min(8, a.bloom + (d.auto ? 0.7 : 0.4) * (1 - 0.15 * ((w.lvl || 1) - 1))); }
+    else spr += a.kind === 'raider' ? (a.crouch ? 1.5 : 3.5) : 0;
     let sr = spr * Math.PI / 180;
     // 子彈磁吸：準心很接近目標時，子彈直接朝目標修正
     let baseAng = a.ang, basePit = a.pitch || 0;
@@ -762,7 +832,7 @@ const Raid = {
       const ang = baseAng + (rand() - 0.5) * sr * 2;
       const pit = a.kind === 'player' ? clamp(basePit + (rand() - 0.5) * sr * 2, -1.3, 1.3) : 0;
       const mx = a.x + Math.cos(a.ang) * (a.r + 8), my = a.y + Math.sin(a.ang) * (a.r + 8);
-      this.bullets.push({ x: mx, y: my, vx: Math.cos(ang) * d.spd, vy: Math.sin(ang) * d.spd, dmg: d.dmg, team: a.team, owner: a, travel: 0, max: d.rng, heavy: d.dmg >= 40, col: a.kind === 'player' ? '#fff3a0' : '#ffb070', h: a.kind === 'player' ? H.EYE - 1 : 32, vh: a.kind === 'player' ? Math.tan(pit) * d.spd : 0, aimed: a.kind === 'player' });
+      this.bullets.push({ x: mx, y: my, vx: Math.cos(ang) * d.spd, vy: Math.sin(ang) * d.spd, dmg: d.dmg, team: a.team, owner: a, travel: 0, max: d.rng, heavy: d.dmg >= 40, col: a.kind === 'player' ? '#fff3a0' : '#ffb070', h: a.kind === 'player' ? a.eye - 1 : 32, vh: a.kind === 'player' ? Math.tan(pit) * d.spd : 0, aimed: a.kind === 'player' });
     }
     w.ammo--;
     const mx = a.x + Math.cos(a.ang) * (a.r + 10), my = a.y + Math.sin(a.ang) * (a.r + 10);
@@ -803,7 +873,7 @@ const Raid = {
         const hw = b.h + dh * tw;
         const ws = World.query(b.x, b.y, nx, ny, []);
         let tall = false;
-        for (const w of ws) { const t = segRect(b.x, b.y, nx, ny, w); if (t >= 0 && Math.abs(t - tw) < 1e-6) { const top = w.kind === 'cover' ? H.COVER * 0.75 : w.kind === 'border' ? H.BORDER : H.WALL; if (hw < top) tall = true; } }
+        for (const w of ws) { const t = segRect(b.x, b.y, nx, ny, w); if (t >= 0 && Math.abs(t - tw) < 1e-6) { if (hw < World.wallTop(w)) tall = true; } }
         if (!tall) tw = 2;
       }
       let ground = false;
@@ -811,7 +881,8 @@ const Raid = {
       let hit = null, ht = 2, hd = 0, hh = 0;
       const test = t => {
         if (!this.canHit(b, t)) return;
-        const pad = b.rad || 0;
+        if (t.iframe > 0) return;
+        const pad = (b.rad || 0) - (t.crouch && !b.aimed ? t.r * 0.2 : 0);
         if (Math.abs(t.x - b.x) > 200 && Math.abs(t.x - nx) > 200) return;
         const h = segCircle(b.x, b.y, nx, ny, t.x, t.y, t.r + pad);
         if (!h || h.t >= ht) return;
@@ -831,7 +902,7 @@ const Raid = {
         if (b.team === 'player' || b.team === 'raider') {
           if (b.team === 'player') {
             // 掠手：打頭爆頭 2.5 倍；ARC：打中核心（中心）2 倍
-            if (hit.kind === 'raider' ? hh >= 36 : hd < hit.r * 0.38) { crit = true; dmg *= hit.kind === 'raider' ? 2.5 : 2; }
+            if (hit.kind === 'raider' ? hh >= (hit.crouch ? 26 : 36) : hd < hit.r * 0.38) { crit = true; dmg *= hit.kind === 'raider' ? 2.5 : 2; }
           }
           if (hit.kind === 'arc' && hit.def.back) {
             const l = Math.hypot(b.vx, b.vy);
@@ -1014,14 +1085,18 @@ const Raid = {
       let best = null, bd = Infinity;
       for (const t of this.arcTargets(e)) {
         let sight = d.sight;
-        if (t.kind === 'player') { sight *= 1 - skillLv('quiet') * 0.1; if (t.sprint) sight *= 1.25; }
+        if (t.kind === 'player') { sight *= 1 - skillLv('quiet') * 0.1; if (t.sprint) sight *= 1.25; if (t.crouch) sight *= 0.65; }
         const dd = Math.hypot(t.x - e.x, t.y - e.y);
         if (dd > sight) continue;
         if (e.state === 'attack' && e.target === t) { if (dd < bd) { bd = dd * 0.8; best = t; } continue; }
         if (dd < bd && World.los(e.x, e.y, t.x, t.y)) { bd = dd; best = t; }
       }
       if (best) {
-        if (e.state !== 'attack') { e.seenT = 0.6; if (best.kind === 'player' && Math.hypot(best.x - e.x, best.y - e.y) < 700) Sfx.play('charge', 0.6); }
+        if (e.state !== 'attack') {
+          e.seenT = 0.6;
+          if (best.kind === 'player' && Math.hypot(best.x - e.x, best.y - e.y) < 700) Sfx.play('charge', 0.6);
+          if (best.kind === 'player') this.arcCallHelp(e, best);
+        }
         e.state = 'attack'; e.target = best;
       }
       if (e.state === 'attack' && e.target) {
@@ -1088,6 +1163,55 @@ const Raid = {
         this.navigate(e, goal, sp, dt, d.fly);
         if (e.state !== 'attack') e.ang += angDiff(e.ang, Math.atan2(goal.y - e.y, goal.x - e.x)) * Math.min(1, dt * 4);
       }
+    }
+  },
+
+  // ARC 發現玩家時可能發出求援訊號：附近 ARC 會趕來，大型 ARC 還會叫來無人機增援
+  arcCallHelp(e, t) {
+    if (e.called || this.helpCd > 0) return;
+    const ch = { sentinel: 1, bastion: 1, hornet: 0.6, leaper: 0.35, wasp: 0.25 }[e.type] || 0;
+    if (rand() >= ch) return;
+    e.called = true; e.callT = 2.2;
+    this.helpCd = 16;
+    const near = Math.hypot(e.x - this.p.x, e.y - this.p.y);
+    Sfx.play('beacon', 1 - near / 1400, this.panTo(e));
+    this.say(`📡 ${e.def.name} 發出求援訊號！附近的 ARC 正在趕來`, '#f96');
+    let n = 0;
+    for (const o of this.arcs) {
+      if (o === e || !o.alive || o.state === 'attack' || o.def.kind === 'boss') continue;
+      if (dist2(o.x, o.y, e.x, e.y) > 750 * 750) continue;
+      o.state = 'investigate'; o.alert = { x: t.x + rr(-50, 50), y: t.y + rr(-50, 50) }; o.path = null; o.repathT = 0; n++;
+    }
+    if ((e.type === 'sentinel' || e.type === 'bastion' || n < 2) && this.arcs.length < 48) {
+      const k = 2 + (this.map.danger > 1.3 ? 1 : 0);
+      const a = rand() * TAU;
+      const x = clamp(t.x + Math.cos(a) * 650, 60, World.W - 60), y = clamp(t.y + Math.sin(a) * 650, 60, World.H - 60);
+      for (let i = 0; i < k; i++) {
+        const w = this.spawnArc(rand() < 0.75 ? 'wasp' : 'hornet', x + rr(-40, 40), y + rr(-40, 40));
+        w.state = 'investigate'; w.alert = { x: t.x, y: t.y };
+      }
+    }
+  },
+
+  // 聲音左右聲道：目標在視角右邊為正
+  panTo(o) { return clamp(Math.sin(angDiff(this.p.ang, Math.atan2(o.y - this.p.y, o.x - this.p.x))), -1, 1) * 0.85; },
+
+  // 敵人的腳步與機械聲，讓你能用耳朵判斷方向
+  enemySounds(e, dt) {
+    const p = this.p;
+    const moved = Math.hypot(e.x - (e.sx ?? e.x), e.y - (e.sy ?? e.y));
+    e.sx = e.x; e.sy = e.y;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (e.callT > 0) e.callT -= dt;
+    if (d > 560 || !p.alive) return;
+    e.stepD = (e.stepD || 0) + moved;
+    if (e.kind === 'raider') {
+      if (e.stepD > 64) { e.stepD = 0; Sfx.play('estep', (1 - d / 560) * (e.crouch ? 0.25 : 0.75), this.panTo(e)); }
+    } else if (!e.def.fly) {
+      if (e.stepD > (e.type === 'tick' ? 26 : 48)) { e.stepD = 0; Sfx.play(e.r > 30 ? 'stomp' : 'skitter', (1 - d / 560) * 0.6, this.panTo(e)); }
+    } else if (d < 380) {
+      e.buzzT = (e.buzzT || rand()) - dt;
+      if (e.buzzT <= 0) { e.buzzT = 0.9; Sfx.play('buzz', (1 - d / 380) * 0.45, this.panTo(e)); }
     }
   },
 
@@ -1306,9 +1430,10 @@ const Raid = {
         const dd = Math.hypot(e.x - r.x, e.y - r.y);
         if (dd < 480 && dd < bd && World.los(r.x, r.y, e.x, e.y)) { bd = dd; best = e; }
       }
-      if (p.alive) {
+      if (r.state === 'ambush') { if (bd > 260) best = null; this.ambushThink(r); }
+      else if (p.alive) {
         const dd = Math.hypot(p.x - r.x, p.y - r.y);
-        if (dd < 560 && World.los(r.x, r.y, p.x, p.y)) {
+        if (dd < (p.crouch ? 400 : 560) && World.los(r.x, r.y, p.x, p.y)) {
           if (r.hostile) { if (dd < bd * 1.3 || r.target === p) { best = p; bd = dd; } }
           else {
             if (!r.waved && dd < 420) { r.waved = true; r.revealed = true; this.emote(r, '👋 別開槍，我是友善的'); }
@@ -1335,11 +1460,18 @@ const Raid = {
       }
     }
     if (r.react > 0) r.react -= dt;
+    if (r.state === 'ambush') {
+      const a = r.ambush;
+      if (Math.hypot(a.x - r.x, a.y - r.y) > 20) this.navigate(r, a, 120, dt, false);
+      else r.ang = a.face + Math.sin(this.elapsed * 0.4 + r.id) * 0.7;
+      return;
+    }
+    if (r.state === 'fight' && r.crouch && (r.ambushT = (r.ambushT || 0) - dt) <= 0) r.crouch = false;
 
     let spd = 150;
     if (r.state === 'fight') {
       const t = r.target;
-      if (!t || !t.alive) { r.state = 'roam'; r.target = null; r.goal = null; return; }
+      if (!t || !t.alive) { r.state = r.ambush && !r.revealed ? 'ambush' : 'roam'; r.target = null; r.goal = null; return; }
       const dd = Math.hypot(t.x - r.x, t.y - r.y);
       const ta = Math.atan2(t.y - r.y, t.x - r.x);
       if (r.vis) {
@@ -1371,7 +1503,7 @@ const Raid = {
         if (w.ammo < st.d.mag * 0.5) this.startReload(r);
         if (r.lastSeen) this.navigate(r, r.lastSeen, spd, dt, false);
         if (r.lastSeen && Math.hypot(r.lastSeen.x - r.x, r.lastSeen.y - r.y) < 30) r.lastSeen = null;
-        if (r.lostT > 4) { r.state = 'roam'; r.target = null; r.goal = null; }
+        if (r.lostT > 4) { r.state = r.ambush && !r.revealed ? 'ambush' : 'roam'; r.target = null; r.goal = null; }
         if (r.lastSeen) r.ang += angDiff(r.ang, Math.atan2(r.lastSeen.y - r.y, r.lastSeen.x - r.x)) * Math.min(1, dt * 5);
       }
       r.calmT = 0;
@@ -1451,6 +1583,23 @@ const Raid = {
       this.navigate(r, g, spd * 0.8, dt, false);
       r.ang += angDiff(r.ang, Math.atan2(g.y - r.y, g.x - r.x)) * Math.min(1, dt * 4);
       if (Math.hypot(g.x - r.x, g.y - r.y) < 34) { r.state = 'loot'; r.lootT = CONTAINERS[g.type].t * 1.5; }
+    }
+  },
+
+  // 伏擊者：看到玩家後等最佳時機（靠近、背對、搜刮或在等電梯）才開火
+  ambushThink(r) {
+    const p = this.p;
+    if (!p.alive) return;
+    const dd = Math.hypot(p.x - r.x, p.y - r.y);
+    if (dd > 620 || !World.los(r.x, r.y, p.x, p.y)) { r.ready = 0; return; }
+    r.ready = (r.ready || 0) + 0.3;
+    const away = Math.abs(angDiff(p.ang, Math.atan2(r.y - p.y, r.x - p.x))) > 1.7;
+    const waiting = World.extracts.some(e => (e.state === 'calling' || e.state === 'open') && Math.hypot(e.x - p.x, e.y - p.y) < 320);
+    if (dd < 240 || p.search || UI.panelOpen() || waiting || (away && dd < 480) || r.ready > 6) {
+      r.state = 'fight'; r.target = p; r.react = 0.15; r.lostT = 0; r.vis = true;
+      r.lastSeen = { x: p.x, y: p.y }; r.revealed = true; r.ambushT = 1.8;
+      this.emote(r, '🎯 伏擊！');
+      Sfx.play('estep', 0.8, this.panTo(r));
     }
   },
 
@@ -1557,6 +1706,8 @@ const Raid = {
 
   updateHUD() {
     const p = this.p, h = this.hud;
+    const cr = !!p.crouch;
+    if (this._cr !== cr) { this._cr = cr; document.getElementById('btnCrouch').classList.toggle('on', cr); }
     const sf = !!S.settings.showFps;
     if (this._sf !== sf) { this._sf = sf; document.body.classList.toggle('showfps', sf); }
     const set = (el, prop, v) => { if (el['_' + prop] !== v) { el['_' + prop] = v; if (prop === 'text') el.textContent = v; else if (prop === 'html') el.innerHTML = v; else el.style[prop] = v; } };

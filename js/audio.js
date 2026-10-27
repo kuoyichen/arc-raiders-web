@@ -39,7 +39,7 @@ const Sfx = {
     const g = c.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.dest || this.master);
     src.start(t); src.stop(t + dur);
   },
   tone(freq, dur, vol, type = 'square', slide = 0) {
@@ -51,13 +51,24 @@ const Sfx = {
     const g = c.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(this.master);
+    o.connect(g); g.connect(this.dest || this.master);
     o.start(t); o.stop(t + dur);
   },
-  play(name, vol = 1) {
+  // pan：-1 左 ~ 1 右，讓敵人的聲音聽得出方向
+  play(name, vol = 1, pan) {
     if (!this.on()) return;
     vol = Math.max(0, Math.min(1, vol));
     if (vol < 0.03) return;
+    this.dest = null;
+    if (pan && this.ctx.createStereoPanner) {
+      this.dest = this.ctx.createStereoPanner();
+      this.dest.pan.value = Math.max(-1, Math.min(1, pan));
+      this.dest.connect(this.master);
+    }
+    this.sw(name, vol);
+    this.dest = null;
+  },
+  sw(name, vol) {
     switch (name) {
       case 'shot': if (this.gate('shot', 40)) { this.noise(0.14, 2600, 0.55 * vol); this.noise(0.22, 400, 0.45 * vol); this.tone(110, 0.1, 0.28 * vol, 'square', -70); } break;
       case 'heavy': this.noise(0.3, 1200, 0.8 * vol); this.tone(90, 0.25, 0.35 * vol, 'sawtooth', -60); break;
@@ -80,6 +91,20 @@ const Sfx = {
       case 'extract': [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.on() && this.tone(f, 0.25, 0.15, 'triangle'), i * 120)); break;
       case 'death': this.tone(220, 1.2, 0.3, 'sawtooth', -180); break;
       case 'heart': this.tone(60, 0.12, 0.4, 'sine', -20); setTimeout(() => this.on() && this.tone(52, 0.14, 0.3, 'sine', -20), 160); break;
+      case 'step': {
+        // 不同地圖的地面腳步聲：草地悶、沙地沙沙、金屬地板清脆
+        const sf = this.surface;
+        if (sf === 'city') this.noise(0.09, 1800 + Math.random() * 600, 0.22 * vol, 'bandpass');
+        else if (sf === 'port') { this.noise(0.05, 900, 0.3 * vol); this.tone(230 + Math.random() * 40, 0.05, 0.05 * vol, 'triangle'); }
+        else this.noise(0.07, 420 + Math.random() * 160, 0.4 * vol);
+        break;
+      }
+      case 'estep': if (this.gate('estep', 70)) { this.noise(0.07, 520 + Math.random() * 200, 0.5 * vol); } break;
+      case 'skitter': if (this.gate('skit', 60)) this.tone(1300 + Math.random() * 500, 0.025, 0.12 * vol, 'square', -400); break;
+      case 'stomp': if (this.gate('stomp', 150)) { this.noise(0.18, 180, 0.7 * vol); this.tone(55, 0.2, 0.3 * vol, 'sine', -15); } break;
+      case 'buzz': if (this.gate('buzz', 200)) this.tone(150 + Math.random() * 30, 0.6, 0.05 * vol, 'sawtooth', 20); break;
+      case 'beacon': [0, 260, 520].forEach(d => setTimeout(() => this.on() && this.tone(700, 0.2, 0.18 * vol, 'square', 500), d)); break;
+      case 'dodge': this.noise(0.25, 900, 0.3, 'bandpass'); break;
       case 'kill': if (this.gate('kill', 80)) { this.tone(1200, 0.06, 0.14, 'square'); setTimeout(() => this.on() && this.tone(1800, 0.08, 0.14, 'square'), 50); } break;
     }
   },

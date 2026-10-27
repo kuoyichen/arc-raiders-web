@@ -18,6 +18,7 @@ const Input = {
     const keymap = {
       KeyR: 'reload', KeyE: 'interact', KeyF: 'interact', KeyQ: 'swap', Digit1: 'w1', Digit2: 'w2',
       KeyH: 'heal', KeyC: 'shield', KeyG: 'grenade', Tab: 'bag', KeyI: 'bag', KeyM: 'map', Escape: 'esc', KeyP: 'esc',
+      KeyZ: 'crouch', KeyX: 'crouch', Space: 'dodge',
     };
     window.addEventListener('keydown', e => {
       if (e.target && (e.target.tagName === 'INPUT')) return;

@@ -118,7 +118,7 @@ const World = {
       for (let i = 0; i < 6; i++) {
         const a = i / 6 * Math.PI * 2;
         const px = cx * C + C + Math.cos(a) * 260, py = cy * C + C + Math.sin(a) * 260;
-        this.addWall(px - 30, py - 20, 60, 40, 'cover');
+        this.addWall(px - 30, py - 20, 60, 40, 'cover').sub = 'barrier';
         this.addContainer(px + Math.cos(a) * 60, py + Math.sin(a) * 60, rnd() < 0.5 ? 'safe' : 'weapon', true);
       }
     }
@@ -160,6 +160,13 @@ const World = {
     const r = { x, y, w, h, kind, id: this.walls.length };
     this.walls.push(r);
     return r;
+  },
+
+  // 掩體高度：子彈高於此值即可從上方飛過；蹲下時視線低於矮掩體
+  COVER_TOP: { car: 40, block: 38, container: 80, desk: 34, barrier: 48 },
+  wallTop(w) {
+    if (w.kind === 'cover') return this.COVER_TOP[w.sub] || 50;
+    return w.kind === 'border' ? H.BORDER : H.WALL;
   },
 
   addContainer(x, y, type, hv) {
@@ -210,7 +217,7 @@ const World = {
     // 室內家具（小掩體）
     if (rnd() < 0.5 && bw > 200 && bh > 200) {
       const fx = bx + bw * 0.5 - 25, fy = by + bh * 0.5 - 15;
-      if (!split || Math.abs(fx + 25 - split) > 60) this.addWall(fx, fy, 50, 30, 'cover');
+      if (!split || Math.abs(fx + 25 - split) > 60) this.addWall(fx, fy, 50, 30, 'cover').sub = 'desk';
     }
   },
 
@@ -220,17 +227,17 @@ const World = {
     const placed = [];
     for (let i = 0; i < n; i++) {
       const kind = rnd();
-      let w, h;
-      if (kind < 0.35) { w = 64; h = 30; }       // 車輛殘骸
-      else if (kind < 0.7) { w = 36; h = 36; }   // 水泥塊
-      else { w = 96; h = 40; }                   // 貨櫃
+      let w, h, sub;
+      if (kind < 0.35) { w = 64; h = 30; sub = 'car'; }          // 車輛殘骸
+      else if (kind < 0.7) { w = 36; h = 36; sub = 'block'; }    // 水泥塊
+      else { w = 96; h = 40; sub = 'container'; }                // 貨櫃
       if (rnd() < 0.5) { const t = w; w = h; h = t; }
       const x = x0 + 60 + rnd() * (C - 120 - w), y = y0 + 60 + rnd() * (C - 120 - h);
       // 不要擋住電梯中心
       if (Math.abs(x + w / 2 - (x0 + C / 2)) < 110 && Math.abs(y + h / 2 - (y0 + C / 2)) < 110) continue;
       if (placed.some(p => x < p.x + p.w + 40 && x + w + 40 > p.x && y < p.y + p.h + 40 && y + h + 40 > p.y)) continue;
       placed.push({ x, y, w, h });
-      this.addWall(x, y, w, h, 'cover');
+      this.addWall(x, y, w, h, 'cover').sub = sub;
     }
     const cn = rnd() < 0.8 * amount ? 1 + Math.floor(rnd() * 2) : 0;
     for (let i = 0; i < cn; i++) {

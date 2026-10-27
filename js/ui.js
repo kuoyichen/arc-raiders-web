@@ -272,8 +272,8 @@ const UI = {
       <p><b>遊戲循環：</b>在斯佩蘭薩整備 → 空降地表 → 搜刮箱子與 ARC 殘骸 → 找到<b>撤離電梯</b>呼叫並守住 25 秒 → 進入電梯撤離。限時 7 分鐘。</p>
       <p><b>死亡懲罰：</b>身上所有裝備與物品都會掉落，只有<b>安全口袋</b>內的東西能保留。破產時可以領取免費基礎裝備。</p>
       <p><b>掠手：</b>地表上的其他掠手（電腦控制）可能友善、也可能隨時背刺你。名字顏色：灰＝未知、黃＝友善、紅＝敵對。</p>
-      <p><b>電腦：</b>點一下畫面鎖定滑鼠，<kbd>移動滑鼠</kbd> 轉視角 <kbd>滑鼠左鍵</kbd> 按住開火 <kbd>WASD</kbd> 前後左右移動 <kbd>Shift</kbd> 衝刺 <kbd>E</kbd> 互動/搜刮 <kbd>R</kbd> 換彈 <kbd>Q</kbd>/<kbd>1</kbd><kbd>2</kbd> 換槍 <kbd>H</kbd> 治療 <kbd>C</kbd> 護盾充能 <kbd>G</kbd> 手雷 <kbd>Tab</kbd> 背包 <kbd>M</kbd> 地圖 <kbd>Esc</kbd> 暫停</p>
-      <p><b>手機：</b>左半邊拖曳＝移動（往前推到底自動衝刺）；右半邊滑動＝轉動視角；按住右下角 <b>🔥 開火</b> 射擊（按著也能滑動轉向，準心附近的敵人會輕微吸附）。其他按鈕：互動（搜刮/呼叫電梯）、換彈、換槍、治療、護盾、手雷。</p>
+      <p><b>電腦：</b>點一下畫面鎖定滑鼠，<kbd>移動滑鼠</kbd> 轉視角 <kbd>滑鼠左鍵</kbd> 按住開火 <kbd>WASD</kbd> 前後左右移動 <kbd>Shift</kbd> 衝刺 <kbd>Z</kbd> 蹲下（更準、更安靜） <kbd>空白鍵</kbd> 閃避翻滾 <kbd>E</kbd> 互動/搜刮 <kbd>R</kbd> 換彈 <kbd>Q</kbd>/<kbd>1</kbd><kbd>2</kbd> 換槍 <kbd>H</kbd> 治療 <kbd>C</kbd> 護盾充能 <kbd>G</kbd> 手雷 <kbd>Tab</kbd> 背包 <kbd>M</kbd> 地圖 <kbd>Esc</kbd> 暫停</p>
+      <p><b>手機：</b>左半邊拖曳＝移動（往前推到底自動衝刺）；右半邊滑動＝轉動視角；按住右下角 <b>🔥 開火</b> 射擊（按著也能滑動轉向，準心附近的敵人會輕微吸附）。其他按鈕：互動（搜刮/呼叫電梯）、換彈、換槍、治療、護盾、手雷、蹲下（更準、更安靜）、閃避翻滾（短暫無敵）。</p><p><b>聽聲辨位：</b>戴耳機可以聽出敵人腳步聲的左右方向。小心埋伏在電梯附近的掠手，ARC 發現你時也可能發出求援訊號。</p>
       <p><b>技巧：</b>射擊目標中心可爆頭（2.5 倍）；堡壘背後的黃色核心是弱點；槍聲和電梯會吸引 ARC。</p></div>
       <div class="acts"><button class="btn primary" id="helpOk">${first ? '開始吧！' : '了解'}</button></div>`, !back);
     $('helpOk').onclick = () => back ? back() : this.closeModal();
@@ -492,7 +492,7 @@ const UI = {
          <div class="ch-r"><b>右半邊滑動 👉</b><br>轉動視角，把準心對準敵人</div>
          <div class="ch-f"><b>🔥 按住開火</b><br>按著也能滑動轉向 ↘</div>
          <div class="ch-x">點一下關閉</div>`
-      : `<div class="ch-c"><b>🖱️ 點一下畫面鎖定滑鼠</b><br>移動滑鼠轉視角 · 按住左鍵開火 · WASD 移動 · Shift 衝刺<br>E 搜刮/呼叫電梯 · R 換彈 · Q 換槍 · H 治療 · G 手雷 · Tab 背包 · Esc 暫停</div>
+      : `<div class="ch-c"><b>🖱️ 點一下畫面鎖定滑鼠</b><br>移動滑鼠轉視角 · 按住左鍵開火 · WASD 移動 · Shift 衝刺 · Z 蹲下 · 空白鍵 閃避<br>E 搜刮/呼叫電梯 · R 換彈 · Q 換槍 · H 治療 · G 手雷 · Tab 背包 · Esc 暫停</div>
          <div class="ch-x">點一下關閉</div>`;
     el.classList.remove('hidden');
     const close = () => { el.classList.add('hidden'); clearTimeout(this.hintT); };
