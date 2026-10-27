@@ -11,7 +11,7 @@ const RARITY = [
 
 // int: 射擊間隔(秒) rel: 換彈(秒) spr: 散布(度) rng: 射程 noise: 噪音半徑
 const WEAPONS = {
-  kettle:   { name: '水壺',   cls: '手槍',     r: 0, dmg: 15,  int: 0.24,  mag: 12, rel: 1.5, spr: 3.5, spd: 1300, rng: 640,  auto: false, pel: 1, noise: 600,  price: 300 },
+  kettle:   { name: '水壺',   cls: '手槍',     r: 0, dmg: 24,  int: 0.17,  mag: 16, rel: 1.2, spr: 2.0, spd: 1500, rng: 760,  auto: false, pel: 1, noise: 600,  price: 300 },
   stitcher: { name: '縫補者', cls: '衝鋒槍',   r: 1, dmg: 9,   int: 0.075, mag: 30, rel: 2.0, spr: 7,   spd: 1300, rng: 540,  auto: true,  pel: 1, noise: 650,  price: 900 },
   ferro:    { name: '鐵桿',   cls: '折動步槍', r: 1, dmg: 60,  int: 0.85,  mag: 1,  rel: 1.1, spr: 0.8, spd: 2000, rng: 1000, auto: false, pel: 1, noise: 850,  price: 1000 },
   rattler:  { name: '響尾蛇', cls: '突擊步槍', r: 1, dmg: 13,  int: 0.115, mag: 24, rel: 2.3, spr: 4.5, spd: 1500, rng: 740,  auto: true,  pel: 1, noise: 750,  price: 1200 },
