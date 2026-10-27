@@ -3,8 +3,16 @@
 
 const H = { WALL: 110, COVER: 58, BORDER: 260, EYE: 44, GUN: 36, FLY: 62 };
 
+// 畫質等級：解析度倍率、可視距離、地面貼圖大小、粒子上限
+const GFX = [
+  { name: '低', pr: 0.7, far: 850, tex: 1024, maxP: 220 },
+  { name: '中', pr: 1.1, far: 1150, tex: 1024, maxP: 450 },
+  { name: '高', pr: 2, far: 1500, tex: 2048, maxP: 700 },
+];
+
 const R3 = {
   ready: false,
+  fps: 60,
 
   init(canvas3d, overlay) {
     this.cv = canvas3d;
@@ -42,7 +50,9 @@ const R3 = {
     if (!this.ready) return;
     const w = this.cv.clientWidth || window.innerWidth, h = this.cv.clientHeight || window.innerHeight;
     const touch = Input.touch;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.5 : 2));
+    void touch;
+    const g = this.gfxConf();
+    this.renderer.setPixelRatio(g.pr < 1 ? g.pr : Math.min(window.devicePixelRatio || 1, g.pr));
     this.renderer.setSize(w, h, false);
     const aspect = w / h;
     // 以水平視野 90° 為準，直向螢幕時限制垂直視野
@@ -53,6 +63,18 @@ const R3 = {
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
     this.W = w; this.H = h;
+  },
+
+  gfxLv() { return S && S.settings.gfx != null ? S.settings.gfx : (Input.touch ? 1 : 2); },
+  gfxConf() { return GFX[this.gfxLv()]; },
+  applyGfx() {
+    this.resize();
+    if (this.scene) {
+      const g = this.gfxConf();
+      this.scene.fog.far = g.far;
+      this.camera.far = g.far + 60;
+      this.camera.updateProjectionMatrix();
+    }
   },
 
   mat(color, opts = {}) { return new THREE.MeshLambertMaterial(Object.assign({ color }, opts)); },
@@ -72,8 +94,10 @@ const R3 = {
     const scene = new THREE.Scene();
     this.scene = scene;
     scene.background = new THREE.Color(sky);
-    scene.fog = new THREE.Fog(sky, 260, Input.touch ? 1250 : 1500);
-    this.camera.far = Input.touch ? 1300 : 1600;
+    const gc = this.gfxConf();
+    scene.fog = new THREE.Fog(sky, 220, gc.far);
+    this.camera.far = gc.far + 60;
+    this.resize();
     this.camera.updateProjectionMatrix();
     scene.add(new THREE.HemisphereLight(0xfff4e0, 0x404030, 0.85));
     const sun = new THREE.DirectionalLight(0xffffff, 0.65);
@@ -82,7 +106,7 @@ const R3 = {
     scene.add(this.camera);
 
     // 地面貼圖
-    const TS = Input.touch ? 1024 : 2048;
+    const TS = gc.tex;
     const tc = document.createElement('canvas');
     tc.width = tc.height = TS;
     const g = tc.getContext('2d');
@@ -238,6 +262,17 @@ const R3 = {
     scene.add(this.smoke);
 
     this.buildViewmodel();
+    this.muzzleLight = new THREE.PointLight(0xffc860, 0, 260, 2);
+    this.muzzleLight.position.set(1.5, -0.5, -8);
+    this.camera.add(this.muzzleLight);
+    this.debrisMesh = new THREE.InstancedMesh(this.geo.box, this.mat(0xffffff), 80);
+    this.debrisMesh.setColorAt(0, this.col.setHex(0xffffff));
+    this.debrisMesh.frustumCulled = false;
+    this.debrisMesh.count = 0;
+    scene.add(this.debrisMesh);
+    this.debrisList = [];
+    this.kick = 0;
+    this.fpsAcc = 0; this.fpsN = 0; this.slowT = 0; this.gfxCool = 8;
     this.vmBaseX = Input.touch ? 1.1 : 1.4;
     this.hitT = 0; this.hitCrit = false; this.killT = 0;
     this.recoilZ = 0; this.bob = 0;
@@ -418,7 +453,9 @@ const R3 = {
     const bobY = moving ? Math.sin(this.bob) * (p.sprint ? 2.2 : 1.2) : 0;
     const sh = raid.cam.shake;
     cam.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, H.EYE + bobY + (Math.random() - 0.5) * sh * 0.3, p.y);
-    const pc = Math.cos(p.pitch || 0), ps = Math.sin(p.pitch || 0);
+    this.kick = Math.max(0, this.kick - dt * 0.35);
+    const vp = (p.pitch || 0) + this.kick;
+    const pc = Math.cos(vp), ps = Math.sin(vp);
     this.v.set(cam.position.x + Math.cos(p.ang) * pc * 100, cam.position.y + ps * 100, cam.position.z + Math.sin(p.ang) * pc * 100);
     cam.lookAt(this.v);
 
@@ -435,6 +472,7 @@ const R3 = {
       this.vm.rotation.set(-rk * 0.9 + this.recoilZ * 0.03, 0, rk * 0.3);
       this.vmFlashT = (this.vmFlashT || 0) - dt;
       this.vmFlash.visible = this.vmFlashT > 0;
+      this.muzzleLight.intensity = this.vmFlashT > 0 ? 2.2 : 0;
       this.vmFlash.rotation.z = Math.random() * 3;
     }
 
@@ -466,7 +504,7 @@ const R3 = {
       let m = this.eMeshes.get(e);
       if (!m) { m = this.makeEntity(e); this.eMeshes.set(e, m); }
       const d = dist2(e.x, e.y, p.x, p.y);
-      m.visible = d < 1700 * 1700;
+      m.visible = d < (this.gfxConf().far + 150) ** 2;
       if (!m.visible) continue;
       let y = 0;
       if (e.kind === 'arc' && e.def.fly) y = H.FLY + Math.sin(now * 3 + e.id) * 4;
@@ -558,6 +596,7 @@ const R3 = {
 
     // 粒子
     let pi = 0, si = 0;
+    const maxP = Math.min(this.pN, this.gfxConf().maxP);
     for (const f of raid.fx) {
       if (f.h === undefined) { f.h = f.ring ? 20 : f.glow ? 12 + Math.random() * 30 : 24 + Math.random() * 16; f.vh = f.smoke ? 25 : f.glow ? 30 + Math.random() * 90 : Math.random() * 40; }
       f.h += f.vh * dt; f.vh -= (f.smoke ? 0 : 120) * dt; if (f.h < 1) { f.h = 1; f.vh = 0; }
@@ -573,7 +612,7 @@ const R3 = {
         this.sCol[si * 3] = this.col.r; this.sCol[si * 3 + 1] = this.col.g; this.sCol[si * 3 + 2] = this.col.b;
         si++;
       } else {
-        if (pi >= this.pN) continue;
+        if (pi >= maxP) continue;
         this.pPos[pi * 3] = f.x; this.pPos[pi * 3 + 1] = f.h; this.pPos[pi * 3 + 2] = f.y;
         this.pCol[pi * 3] = this.col.r * a; this.pCol[pi * 3 + 1] = this.col.g * a; this.pCol[pi * 3 + 2] = this.col.b * a;
         pi++;
@@ -595,7 +634,29 @@ const R3 = {
       fl.material.opacity = k * 0.55;
     }
 
+    // 碎片
+    let di = 0;
+    for (const d of this.debrisList) {
+      d.t -= dt;
+      d.vh -= 500 * dt;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.h += d.vh * dt;
+      if (d.h < d.s / 2) { d.h = d.s / 2; d.vh *= -0.35; d.vx *= 0.6; d.vy *= 0.6; d.spin *= 0.6; }
+      d.r += d.spin * dt;
+      if (d.t <= 0 || di >= 80) continue;
+      this.q.setFromAxisAngle(d.axis, d.r);
+      const k = Math.min(1, d.t * 2);
+      this.m4.compose(this.v.set(d.x, d.h, d.y), this.q, this.s3.set(d.s * k, d.s * 0.6 * k, d.s * 0.8 * k));
+      this.debrisMesh.setMatrixAt(di, this.m4);
+      this.debrisMesh.setColorAt(di, this.col.set(d.c));
+      di++;
+    }
+    this.debrisList = this.debrisList.filter(d => d.t > 0);
+    this.debrisMesh.count = di;
+    this.debrisMesh.instanceMatrix.needsUpdate = true;
+    if (this.debrisMesh.instanceColor) this.debrisMesh.instanceColor.needsUpdate = true;
+
     this.renderer.render(this.scene, cam);
+    this.trackFps(dt);
     this.drawOverlay(raid, dt, now);
   },
 
@@ -732,7 +793,44 @@ const R3 = {
     if (kill) this.killT = 0.35;
     else { this.hitT = 0.15; this.hitCrit = crit; }
   },
+  debris(x, y, h, n, big) {
+    if (!this.scene) return;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU, sp = 60 + Math.random() * 160;
+      this.debrisList.push({
+        x, y, h: h + Math.random() * 10, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vh: 120 + Math.random() * 220,
+        s: (3 + Math.random() * 5) * (big ? 2 : 1), r: 0, spin: (Math.random() - 0.5) * 20,
+        axis: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(),
+        c: Math.random() < 0.25 ? '#ff5a3a' : (Math.random() < 0.5 ? '#5c5f66' : '#34363b'), t: 1.6 + Math.random(),
+      });
+    }
+    if (this.debrisList.length > 120) this.debrisList.splice(0, this.debrisList.length - 120);
+  },
+
+  trackFps(dt) {
+    if (dt <= 0) return;
+    this.fpsAcc += dt; this.fpsN++;
+    if (this.fpsAcc >= 0.5) {
+      this.fps = this.fpsN / this.fpsAcc;
+      this.fpsAcc = 0; this.fpsN = 0;
+      const el = document.getElementById('fps');
+      if (el) el.textContent = Math.round(this.fps) + ' FPS · 畫質' + this.gfxConf().name;
+      // 持續卡頓時自動降低畫質
+      this.gfxCool -= 0.5;
+      if (this.fps < 26 && this.gfxLv() > 0 && this.gfxCool <= 0 && S.settings.gfxAuto !== false) {
+        this.slowT += 0.5;
+        if (this.slowT >= 4) {
+          S.settings.gfx = this.gfxLv() - 1; saveGame();
+          this.applyGfx();
+          this.slowT = 0; this.gfxCool = 8;
+          UI.toast('偵測到卡頓，已自動將畫質調為「' + this.gfxConf().name + '」');
+        }
+      } else this.slowT = 0;
+    }
+  },
+
   fired(heavy) {
+    this.kick = Math.min(0.12, this.kick + (heavy ? 0.045 : 0.012));
     this.recoilZ = Math.min(6, this.recoilZ + (heavy ? 4 : 1.8));
     this.vmFlashT = 0.05;
   },

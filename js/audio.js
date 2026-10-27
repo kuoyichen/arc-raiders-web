@@ -59,7 +59,7 @@ const Sfx = {
     vol = Math.max(0, Math.min(1, vol));
     if (vol < 0.03) return;
     switch (name) {
-      case 'shot': if (this.gate('shot', 40)) { this.noise(0.12, 2200, 0.5 * vol); this.tone(140, 0.08, 0.2 * vol, 'square', -80); } break;
+      case 'shot': if (this.gate('shot', 40)) { this.noise(0.14, 2600, 0.55 * vol); this.noise(0.22, 400, 0.45 * vol); this.tone(110, 0.1, 0.28 * vol, 'square', -70); } break;
       case 'heavy': this.noise(0.3, 1200, 0.8 * vol); this.tone(90, 0.25, 0.35 * vol, 'sawtooth', -60); break;
       case 'eshot': if (this.gate('eshot', 60)) { this.tone(900, 0.06, 0.12 * vol, 'square', -500); } break;
       case 'hit': if (this.gate('hit', 50)) this.tone(1600, 0.04, 0.12 * vol, 'triangle'); break;
@@ -79,6 +79,7 @@ const Sfx = {
       case 'buy': this.tone(988, 0.07, 0.12, 'triangle'); setTimeout(() => this.on() && this.tone(1480, 0.1, 0.12, 'triangle'), 70); break;
       case 'extract': [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.on() && this.tone(f, 0.25, 0.15, 'triangle'), i * 120)); break;
       case 'death': this.tone(220, 1.2, 0.3, 'sawtooth', -180); break;
+      case 'heart': this.tone(60, 0.12, 0.4, 'sine', -20); setTimeout(() => this.on() && this.tone(52, 0.14, 0.3, 'sine', -20), 160); break;
       case 'kill': if (this.gate('kill', 80)) { this.tone(1200, 0.06, 0.14, 'square'); setTimeout(() => this.on() && this.tone(1800, 0.08, 0.14, 'square'), 50); } break;
     }
   },

@@ -256,6 +256,7 @@ const Raid = {
     for (const f of this.feedItems) { const o = f.t; f.t -= dt; if (o > 1 || f.t <= 0) { if (f.t <= 1) feedChanged = true; } else feedChanged = true; }
     if (feedChanged) { this.feedItems = this.feedItems.filter(f => f.t > 0); this.renderFeed(); }
     this.hurtA = Math.max(0, this.hurtA - dt * 1.5);
+    if (p.alive && p.hp / p.maxHp < 0.3) { this.heartT = (this.heartT || 0) - dt; if (this.heartT <= 0) { this.heartT = 0.5 + 0.6 * (p.hp / p.maxHp) / 0.3; Sfx.play('heart'); } }
 
     this.cam.x = p.x; this.cam.y = p.y;
     this.cam.shake = Math.max(0, this.cam.shake - dt * 30);
@@ -840,7 +841,9 @@ const Raid = {
         }
         const hx = b.x + (nx - b.x) * ht, hy = b.y + (ny - b.y) * ht;
         this.damage(hit, dmg, b.owner, crit, hx, hy);
-        for (let i = 0; i < 4; i++) this.fx.push({ x: hx, y: hy, vx: rr(-120, 120), vy: rr(-120, 120), t: 0.2, max: 0.2, c: hit.kind === 'arc' ? '#ffcc66' : '#ff5555', s: 2, h: b.aimed ? hh : undefined, vh: 30 });
+        const nfx = hit.kind === 'arc' ? 9 : 5;
+        for (let i = 0; i < nfx; i++) this.fx.push({ x: hx, y: hy, vx: rr(-160, 160), vy: rr(-160, 160), t: rr(0.15, 0.35), max: 0.35, c: hit.kind === 'arc' ? (rand() < 0.5 ? '#ffe08a' : '#ff9a3c') : '#ff4444', s: 2, h: b.aimed ? hh : undefined, vh: rr(20, 140) });
+        if (hit.kind === 'arc' && b.team === 'player' && rand() < 0.35) R3.debris(hx, hy, b.aimed ? hh : 30, 1, false);
         continue;
       }
       if (tw <= 1) {
@@ -904,6 +907,7 @@ const Raid = {
     }
     if (t.kind === 'arc') {
       this.boom(t.x, t.y, t.r * 1.6, 0, null);
+      R3.debris(t.x, t.y, t.def.fly ? H.FLY : t.r, 6 + Math.round(t.r / 4), t.r > 30);
       const items = [];
       for (const [k, n] of t.def.drops) items.push({ k, n });
       for (const [k, ch] of t.def.dropChance) if (rand() < ch) items.push({ k, n: 1 });
@@ -1553,6 +1557,8 @@ const Raid = {
 
   updateHUD() {
     const p = this.p, h = this.hud;
+    const sf = !!S.settings.showFps;
+    if (this._sf !== sf) { this._sf = sf; document.body.classList.toggle('showfps', sf); }
     const set = (el, prop, v) => { if (el['_' + prop] !== v) { el['_' + prop] = v; if (prop === 'text') el.textContent = v; else if (prop === 'html') el.innerHTML = v; else el.style[prop] = v; } };
     set(h.hpFill, 'width', (clamp(p.hp / p.maxHp, 0, 1) * 100).toFixed(1) + '%');
     set(h.shFill, 'width', (p.shMax ? clamp(p.sh / p.shMax, 0, 1) * 100 : 0).toFixed(1) + '%');

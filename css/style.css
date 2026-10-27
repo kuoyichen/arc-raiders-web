@@ -261,3 +261,6 @@ body.touch #touchBtns { right: calc(max(14px, env(safe-area-inset-right)) + 104p
   #hudTC { left: 52%; }
   #objective { font-size: 10px; white-space: normal; max-width: 120px; }
 }
+
+#fps { position: absolute; left: max(10px, env(safe-area-inset-left)); bottom: 6px; font-size: 11px; color: rgba(255,255,255,.55); display: none; }
+body.showfps #fps { display: block; }

@@ -258,7 +258,9 @@ const UI = {
   tab_settings() {
     return `<h2>設定</h2><div class="list">
       <div class="li"><div class="ic">🔊</div><div class="tx"><b>音效</b></div><button class="btn sm" data-a="sound">${S.settings.sound ? '開啟' : '關閉'}</button></div>
-      <div class="li"><div class="ic">🧲</div><div class="tx"><b>輔助瞄準</b><div>準心靠近敵人時自動吸附、子彈修正方向</div></div>${[['0', '關'], ['1', '弱'], ['2', '強']].map(([v, l]) => `<button class="btn sm ${(S.settings.assist == null ? 2 : S.settings.assist) == v ? 'primary' : ''}" data-a="assist" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="li"><div class="ic">🖥️</div><div class="tx"><b>畫質</b><div>手機卡頓請選「低」；遊戲中持續卡頓會自動降低</div></div>${GFX.map((g, i) => `<button class="btn sm ${R3.gfxLv() == i ? 'primary' : ''}" data-a="gfx" data-v="${i}">${g.name}</button>`).join('')}</div>
+      <div class="li"><div class="ic">📈</div><div class="tx"><b>顯示 FPS</b></div><button class="btn sm" data-a="fps">${S.settings.showFps ? '開啟' : '關閉'}</button></div>
+            <div class="li"><div class="ic">🧲</div><div class="tx"><b>輔助瞄準</b><div>準心靠近敵人時自動吸附、子彈修正方向</div></div>${[['0', '關'], ['1', '弱'], ['2', '強']].map(([v, l]) => `<button class="btn sm ${(S.settings.assist == null ? 2 : S.settings.assist) == v ? 'primary' : ''}" data-a="assist" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="li"><div class="ic">🎯</div><div class="tx"><b>視角靈敏度</b><div>滑鼠與觸控轉視角的速度</div></div>${[['0.6', '低'], ['1', '中'], ['1.5', '高'], ['2.2', '極高']].map(([v, l]) => `<button class="btn sm ${(S.settings.sens || 1) == v ? 'primary' : ''}" data-a="sens" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="li"><div class="ic">❓</div><div class="tx"><b>操作說明</b></div><button class="btn sm" data-a="help">查看</button></div>
       <div class="li"><div class="ic">🗑️</div><div class="tx"><b>重置存檔</b><div>清除所有進度，從頭開始</div></div><button class="btn danger sm" data-a="reset">重置</button></div>
@@ -350,6 +352,8 @@ const UI = {
       case 'sound': S.settings.sound = !S.settings.sound; break;
       case 'sens': S.settings.sens = +v; break;
       case 'assist': S.settings.assist = +v; break;
+      case 'gfx': S.settings.gfx = +v; R3.applyGfx(); break;
+      case 'fps': S.settings.showFps = !S.settings.showFps; break;
       case 'help': return this.showHelp(false);
       case 'reset':
         this.modal(`<h3>確定要重置存檔？</h3><p class="muted">所有裝備、倉庫、等級與任務進度都會消失。</p><div class="acts"><button class="btn" onclick="UI.closeModal()">取消</button><button class="btn danger" onclick="resetGame();UI.closeModal();UI.tab='loadout';UI.renderBase();UI.toast('存檔已重置')">重置</button></div>`);
@@ -620,6 +624,7 @@ const UI = {
         <button class="btn" onclick="UI.showHelp(false,()=>UI.pause(true))">操作說明</button>
         <button class="btn" onclick="UI.pause(false);UI.showCtrlHint(true)">顯示操作提示</button>
         <button class="btn" onclick="S.settings.sound=!S.settings.sound;saveGame();this.textContent='音效：'+(S.settings.sound?'開':'關')">音效：${S.settings.sound ? '開' : '關'}</button>
+        <button class="btn" onclick="S.settings.gfx=(R3.gfxLv()+2)%3;saveGame();R3.applyGfx();this.textContent='畫質：'+GFX[S.settings.gfx].name">畫質：${GFX[R3.gfxLv()].name}</button>
         <button class="btn" onclick="S.settings.assist=((S.settings.assist==null?2:S.settings.assist)+1)%3;saveGame();this.textContent='輔助瞄準：'+['關','弱','強'][S.settings.assist]">輔助瞄準：${['關', '弱', '強'][S.settings.assist == null ? 2 : S.settings.assist]}</button>
         <button class="btn danger" onclick="UI.closeModal();Raid.abandon()">放棄遠征</button></div>`, false);
   },
