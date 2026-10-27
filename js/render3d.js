@@ -418,7 +418,8 @@ const R3 = {
     const bobY = moving ? Math.sin(this.bob) * (p.sprint ? 2.2 : 1.2) : 0;
     const sh = raid.cam.shake;
     cam.position.set(p.x + (Math.random() - 0.5) * sh * 0.3, H.EYE + bobY + (Math.random() - 0.5) * sh * 0.3, p.y);
-    this.v.set(p.x + Math.cos(p.ang) * 100, H.EYE + bobY * 0.5, p.y + Math.sin(p.ang) * 100);
+    const pc = Math.cos(p.pitch || 0), ps = Math.sin(p.pitch || 0);
+    this.v.set(cam.position.x + Math.cos(p.ang) * pc * 100, cam.position.y + ps * 100, cam.position.z + Math.sin(p.ang) * pc * 100);
     cam.lookAt(this.v);
 
     // 槍模型
@@ -512,7 +513,8 @@ const R3 = {
       if (b.team === 'arc') orb(b.x, h, b.y, (b.rad || 3) * 1.3, b.col);
       else {
         const L = b.heavy ? 46 : 30;
-        setTracer(b.x - b.vx / l * L, h, b.y - b.vy / l * L, b.x, h, b.y, b.heavy ? 1.6 : 1.1, b.col);
+        const sl = b.aimed ? (b.vh || 0) / l * L : 0;
+        setTracer(b.x - b.vx / l * L, h - sl, b.y - b.vy / l * L, b.x, h, b.y, b.heavy ? 1.6 : 1.1, b.col);
       }
     }
     for (const bm of raid.beams) {

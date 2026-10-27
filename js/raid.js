@@ -280,6 +280,7 @@ const Raid = {
     // 輸入：第一人稱視角
     const sens = 0.0024 * (S.settings.sens || 1) * (Input.touch ? 1.9 : 1);
     p.ang += Input.lookDX * sens + Input.keyTurn() * 2.4 * dt;
+    p.pitch = clamp((p.pitch || 0) - Input.lookDY * sens, -1.25, 1.25);
     let mv = Input.touch && (Input.move.x || Input.move.y) ? Input.move : Input.keyMove();
     const mag = Math.hypot(mv.x, mv.y);
     const panel = UI.panelOpen();
@@ -287,7 +288,12 @@ const Raid = {
     if (Input.touch && firing) {
       // 觸控瞄準輔助：準心附近的敵人會被輕微吸附
       const t = this.aimTarget(0.22, 700);
-      if (t) p.ang += angDiff(p.ang, Math.atan2(t.y - p.y, t.x - p.x)) * Math.min(1, dt * 7);
+      if (t) {
+        p.ang += angDiff(p.ang, Math.atan2(t.y - p.y, t.x - p.x)) * Math.min(1, dt * 7);
+        const [lo, hi] = this.vRange(t);
+        const want = Math.atan2((lo + hi) / 2 - H.EYE, Math.max(30, Math.hypot(t.x - p.x, t.y - p.y)));
+        p.pitch += (want - p.pitch) * Math.min(1, dt * 5);
+      }
     }
 
     // 衝刺（只在往前時）
@@ -382,6 +388,15 @@ const Raid = {
       p.extractT += dt;
       if (p.extractT >= 3) { this.end(true, `經由${ex.name}成功撤離`); return; }
     } else p.extractT = 0;
+  },
+
+  // 目標的垂直範圍（用於上下瞄準的命中判定）
+  vRange(t) {
+    if (t.kind === 'raider' || t.kind === 'player') return [0, 52];
+    const z = t.z || 0;
+    if (t.def.fly) return [H.FLY - t.r * 0.9, H.FLY + t.r * 0.9];
+    const top = { tick: 22, pop: t.r * 2 + 10, leaper: 52, sentinel: 54, bastion: 68, queen: 140 }[t.type] || t.r * 2;
+    return [z, z + top];
   },
 
   aimTarget(maxA, range) {
@@ -724,8 +739,9 @@ const Raid = {
     const sr = spr * Math.PI / 180;
     for (let i = 0; i < d.pel; i++) {
       const ang = a.ang + (rand() - 0.5) * sr * 2;
+      const pit = a.kind === 'player' ? clamp((a.pitch || 0) + (rand() - 0.5) * sr * 2, -1.3, 1.3) : 0;
       const mx = a.x + Math.cos(a.ang) * (a.r + 8), my = a.y + Math.sin(a.ang) * (a.r + 8);
-      this.bullets.push({ x: mx, y: my, vx: Math.cos(ang) * d.spd, vy: Math.sin(ang) * d.spd, dmg: d.dmg, team: a.team, owner: a, travel: 0, max: d.rng, heavy: d.dmg >= 40, col: a.kind === 'player' ? '#fff3a0' : '#ffb070', h: a.kind === 'player' ? H.EYE - 6 : 32 });
+      this.bullets.push({ x: mx, y: my, vx: Math.cos(ang) * d.spd, vy: Math.sin(ang) * d.spd, dmg: d.dmg, team: a.team, owner: a, travel: 0, max: d.rng, heavy: d.dmg >= 40, col: a.kind === 'player' ? '#fff3a0' : '#ffb070', h: a.kind === 'player' ? H.EYE - 1 : 32, vh: a.kind === 'player' ? Math.tan(pit) * d.spd : 0, aimed: a.kind === 'player' });
     }
     w.ammo--;
     const mx = a.x + Math.cos(a.ang) * (a.r + 10), my = a.y + Math.sin(a.ang) * (a.r + 10);
@@ -760,13 +776,31 @@ const Raid = {
     for (const b of this.bullets) {
       const nx = b.x + b.vx * dt, ny = b.y + b.vy * dt;
       let tw = World.rayWall(b.x, b.y, nx, ny);
-      let hit = null, ht = 2, hd = 0;
+      // 子彈有高度：打到地面、或從矮掩體／牆頂上方飛過
+      const dh = (b.vh || 0) * dt;
+      if (b.aimed && tw <= 1) {
+        const hw = b.h + dh * tw;
+        const ws = World.query(b.x, b.y, nx, ny, []);
+        let tall = false;
+        for (const w of ws) { const t = segRect(b.x, b.y, nx, ny, w); if (t >= 0 && Math.abs(t - tw) < 1e-6) { const top = w.kind === 'cover' ? H.COVER * 0.75 : w.kind === 'border' ? H.BORDER : H.WALL; if (hw < top) tall = true; } }
+        if (!tall) tw = 2;
+      }
+      let ground = false;
+      if (b.aimed && dh < 0 && b.h + dh <= 0) { const tg = b.h / -dh; if (tg < tw) { tw = tg; ground = true; } }
+      let hit = null, ht = 2, hd = 0, hh = 0;
       const test = t => {
         if (!this.canHit(b, t)) return;
         const pad = b.rad || 0;
         if (Math.abs(t.x - b.x) > 200 && Math.abs(t.x - nx) > 200) return;
         const h = segCircle(b.x, b.y, nx, ny, t.x, t.y, t.r + pad);
-        if (h && h.t < ht) { ht = h.t; hit = t; hd = h.d; }
+        if (!h || h.t >= ht) return;
+        if (b.aimed) {
+          const bh = b.h + dh * h.t;
+          const [lo, hi] = this.vRange(t);
+          if (bh < lo - 6 || bh > hi + 6) return;
+          hh = bh;
+        }
+        ht = h.t; hit = t; hd = h.d;
       };
       for (const e of this.arcs) test(e);
       for (const r of this.raiders) test(r);
@@ -774,7 +808,10 @@ const Raid = {
       if (hit && ht <= tw) {
         let dmg = b.dmg, crit = false;
         if (b.team === 'player' || b.team === 'raider') {
-          if (hd < hit.r * 0.38 && b.team === 'player') { crit = true; dmg *= hit.kind === 'raider' ? 2.5 : 2; }
+          if (b.team === 'player') {
+            // 掠手：打頭爆頭 2.5 倍；ARC：打中核心（中心）2 倍
+            if (hit.kind === 'raider' ? hh >= 36 : hd < hit.r * 0.38) { crit = true; dmg *= hit.kind === 'raider' ? 2.5 : 2; }
+          }
           if (hit.kind === 'arc' && hit.def.back) {
             const l = Math.hypot(b.vx, b.vy);
             const dot = (b.vx / l) * Math.cos(hit.ang) + (b.vy / l) * Math.sin(hit.ang);
@@ -783,17 +820,19 @@ const Raid = {
         }
         const hx = b.x + (nx - b.x) * ht, hy = b.y + (ny - b.y) * ht;
         this.damage(hit, dmg, b.owner, crit, hx, hy);
-        for (let i = 0; i < 4; i++) this.fx.push({ x: hx, y: hy, vx: rr(-120, 120), vy: rr(-120, 120), t: 0.2, max: 0.2, c: hit.kind === 'arc' ? '#ffcc66' : '#ff5555', s: 2 });
+        for (let i = 0; i < 4; i++) this.fx.push({ x: hx, y: hy, vx: rr(-120, 120), vy: rr(-120, 120), t: 0.2, max: 0.2, c: hit.kind === 'arc' ? '#ffcc66' : '#ff5555', s: 2, h: b.aimed ? hh : undefined, vh: 30 });
         continue;
       }
       if (tw <= 1) {
         const hx = b.x + (nx - b.x) * tw, hy = b.y + (ny - b.y) * tw;
-        for (let i = 0; i < 3; i++) this.fx.push({ x: hx, y: hy, vx: rr(-80, 80), vy: rr(-80, 80), t: 0.18, max: 0.18, c: '#cbb', s: 2 });
+        const sh = ground ? 1 : b.h + dh * tw;
+        for (let i = 0; i < 3; i++) this.fx.push({ x: hx, y: hy, vx: rr(-80, 80), vy: rr(-80, 80), t: 0.18, max: 0.18, c: '#cbb', s: 2, h: sh, vh: 40 });
         continue;
       }
       b.travel += Math.hypot(nx - b.x, ny - b.y);
       b.px = b.x; b.py = b.y;
-      if (b.vh) b.h = Math.max(4, b.h + b.vh * dt);
+      if (b.vh) b.h = b.aimed ? b.h + dh : Math.max(4, b.h + b.vh * dt);
+      if (b.h > 600) continue;
       b.x = nx; b.y = ny;
       if (b.travel < b.max) out.push(b);
     }
