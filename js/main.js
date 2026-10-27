@@ -7,6 +7,10 @@
   Input.init(canvas);
   Raid.init(canvas);
   UI.init();
+  Input.onUnlock = () => {
+    if (Raid.active && !Raid.paused && !Raid.ended && !UI.panelOpen() && !UI.mapOpen && $('modal').classList.contains('hidden')) UI.pause(true);
+  };
+  if (!R3.ready) document.getElementById('btnStart').insertAdjacentHTML('afterend', '<p class="res-bad">你的瀏覽器不支援 WebGL，無法顯示 3D 畫面。</p>');
 
   // 背景：標題與基地畫面時畫一點飄動的灰塵
   const ctx = canvas.getContext('2d');

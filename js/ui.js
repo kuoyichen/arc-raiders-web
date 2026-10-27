@@ -258,6 +258,7 @@ const UI = {
   tab_settings() {
     return `<h2>設定</h2><div class="list">
       <div class="li"><div class="ic">🔊</div><div class="tx"><b>音效</b></div><button class="btn sm" data-a="sound">${S.settings.sound ? '開啟' : '關閉'}</button></div>
+      <div class="li"><div class="ic">🎯</div><div class="tx"><b>視角靈敏度</b><div>滑鼠與觸控轉視角的速度</div></div>${[['0.6', '低'], ['1', '中'], ['1.5', '高'], ['2.2', '極高']].map(([v, l]) => `<button class="btn sm ${(S.settings.sens || 1) == v ? 'primary' : ''}" data-a="sens" data-v="${v}">${l}</button>`).join('')}</div>
       <div class="li"><div class="ic">❓</div><div class="tx"><b>操作說明</b></div><button class="btn sm" data-a="help">查看</button></div>
       <div class="li"><div class="ic">🗑️</div><div class="tx"><b>重置存檔</b><div>清除所有進度，從頭開始</div></div><button class="btn danger sm" data-a="reset">重置</button></div>
       </div><p class="muted" style="margin-top:20px">本作為受《ARC Raiders》玩法啟發的粉絲自製網頁遊戲，與 Embark Studios 無關。</p>`;
@@ -268,9 +269,8 @@ const UI = {
       <p><b>遊戲循環：</b>在斯佩蘭薩整備 → 空降地表 → 搜刮箱子與 ARC 殘骸 → 找到<b>撤離電梯</b>呼叫並守住 25 秒 → 進入電梯撤離。限時 7 分鐘。</p>
       <p><b>死亡懲罰：</b>身上所有裝備與物品都會掉落，只有<b>安全口袋</b>內的東西能保留。破產時可以領取免費基礎裝備。</p>
       <p><b>掠手：</b>地表上的其他掠手（電腦控制）可能友善、也可能隨時背刺你。名字顏色：灰＝未知、黃＝友善、紅＝敵對。</p>
-      <p><b>電腦：</b><kbd>滑鼠左鍵</kbd> 按住開火 <kbd>WASD</kbd> 移動 <kbd>滑鼠</kbd> 瞄準 <kbd>Shift</kbd> 衝刺 <kbd>E</kbd> 互動/搜刮 <kbd>R</kbd> 換彈 <kbd>Q</kbd>/<kbd>1</kbd><kbd>2</kbd> 換槍 <kbd>H</kbd> 治療 <kbd>C</kbd> 護盾充能 <kbd>G</kbd> 手雷 <kbd>Tab</kbd> 背包 <kbd>M</kbd> 地圖 <kbd>Esc</kbd> 暫停</p>
-      <p><b>手機開火：</b>按住右下角大顆的 <b>🔥 開火</b> 按鈕，會自動瞄準最近的敵人；或在螢幕右半邊拖曳瞄準，推遠一點也會開火。</p>
-      <p><b>手機移動：</b>左半邊拖曳移動（推到底自動衝刺）。其他按鈕：互動（搜刮/呼叫電梯）、換彈、換槍、治療、護盾、手雷。</p>
+      <p><b>電腦：</b>點一下畫面鎖定滑鼠，<kbd>移動滑鼠</kbd> 轉視角 <kbd>滑鼠左鍵</kbd> 按住開火 <kbd>WASD</kbd> 前後左右移動 <kbd>Shift</kbd> 衝刺 <kbd>E</kbd> 互動/搜刮 <kbd>R</kbd> 換彈 <kbd>Q</kbd>/<kbd>1</kbd><kbd>2</kbd> 換槍 <kbd>H</kbd> 治療 <kbd>C</kbd> 護盾充能 <kbd>G</kbd> 手雷 <kbd>Tab</kbd> 背包 <kbd>M</kbd> 地圖 <kbd>Esc</kbd> 暫停</p>
+      <p><b>手機：</b>左半邊拖曳＝移動（往前推到底自動衝刺）；右半邊滑動＝轉動視角；按住右下角 <b>🔥 開火</b> 射擊（按著也能滑動轉向，準心附近的敵人會輕微吸附）。其他按鈕：互動（搜刮/呼叫電梯）、換彈、換槍、治療、護盾、手雷。</p>
       <p><b>技巧：</b>射擊目標中心可爆頭（2.5 倍）；堡壘背後的黃色核心是弱點；槍聲和電梯會吸引 ARC。</p></div>
       <div class="acts"><button class="btn primary" id="helpOk">${first ? '開始吧！' : '了解'}</button></div>`, !back);
     $('helpOk').onclick = () => back ? back() : this.closeModal();
@@ -347,6 +347,7 @@ const UI = {
         if (S.sp > 0 && skillLv(v) < SKILLS[v].max) { S.sp--; S.skills[v] = skillLv(v) + 1; Sfx.play('buy'); }
         break;
       case 'sound': S.settings.sound = !S.settings.sound; break;
+      case 'sens': S.settings.sens = +v; break;
       case 'help': return this.showHelp(false);
       case 'reset':
         this.modal(`<h3>確定要重置存檔？</h3><p class="muted">所有裝備、倉庫、等級與任務進度都會消失。</p><div class="acts"><button class="btn" onclick="UI.closeModal()">取消</button><button class="btn danger" onclick="resetGame();UI.closeModal();UI.tab='loadout';UI.renderBase();UI.toast('存檔已重置')">重置</button></div>`);
@@ -481,15 +482,15 @@ const UI = {
     const el = $('ctrlHint');
     if (!force && S.stats.raids > 3) return;
     el.innerHTML = Input.touch
-      ? `<div class="ch-l"><b>👈 左半邊拖曳</b><br>移動（推到底衝刺）</div>
-         <div class="ch-r"><b>右半邊拖曳 👉</b><br>瞄準，推遠就開火</div>
-         <div class="ch-f"><b>🔥 按住開火</b><br>自動瞄準最近敵人 ↘</div>
+      ? `<div class="ch-l"><b>👈 左半邊拖曳</b><br>移動（往前推到底衝刺）</div>
+         <div class="ch-r"><b>右半邊滑動 👉</b><br>轉動視角，把準心對準敵人</div>
+         <div class="ch-f"><b>🔥 按住開火</b><br>按著也能滑動轉向 ↘</div>
          <div class="ch-x">點一下關閉</div>`
-      : `<div class="ch-c"><b>🖱️ 按住滑鼠左鍵開火</b><br>滑鼠瞄準 · WASD 移動 · Shift 衝刺<br>E 搜刮/呼叫電梯 · R 換彈 · Q 換槍 · H 治療 · G 手雷 · Tab 背包</div>
+      : `<div class="ch-c"><b>🖱️ 點一下畫面鎖定滑鼠</b><br>移動滑鼠轉視角 · 按住左鍵開火 · WASD 移動 · Shift 衝刺<br>E 搜刮/呼叫電梯 · R 換彈 · Q 換槍 · H 治療 · G 手雷 · Tab 背包 · Esc 暫停</div>
          <div class="ch-x">點一下關閉</div>`;
     el.classList.remove('hidden');
     const close = () => { el.classList.add('hidden'); clearTimeout(this.hintT); };
-    el.onclick = close;
+    el.onclick = () => { close(); Input.requestLock(); };
     el.ontouchstart = e => { e.preventDefault(); close(); };
     clearTimeout(this.hintT);
     this.hintT = setTimeout(close, 9000);
@@ -500,12 +501,12 @@ const UI = {
 
   openLoot(c) {
     this.mode = 'loot'; this.lootC = c; Raid.openC = c;
-    Input.resetTouch();
+    Input.resetTouch(); Input.exitLock();
     this.renderPanel();
   },
   openBag() {
     this.mode = 'bag'; this.lootC = null; Raid.openC = null;
-    Input.resetTouch();
+    Input.resetTouch(); Input.exitLock();
     this.renderPanel();
   },
   closePanel(force) {
@@ -513,6 +514,7 @@ const UI = {
     $('panel').classList.add('hidden');
     const sh = document.querySelector('.sheet'); if (sh) sh.remove();
     if (force) { this.closeModal(); }
+    else Input.requestLock();
   },
   refreshPanel() { if (this.mode) this.renderPanel(); },
 
@@ -588,9 +590,11 @@ const UI = {
   },
 
   toggleMap() {
-    if (this.mapOpen) { this.closeModal(); return; }
+    if (this.mapOpen) { this.closeModal(); Input.requestLock(); return; }
+    this.mapOpen = true;
+    Input.exitLock();
     const size = Math.min(window.innerWidth - 60, window.innerHeight - 110, 640);
-    this.modal(`<div class="row"><h3 class="sp" style="margin:0">🗺 ${Raid.map.name}</h3><button class="btn sm" onclick="UI.closeModal()">關閉</button></div>
+    this.modal(`<div class="row"><h3 class="sp" style="margin:0">🗺 ${Raid.map.name}</h3><button class="btn sm" onclick="UI.closeModal();Input.requestLock()">關閉</button></div>
       <canvas id="bigMap" width="${size}" height="${size}" style="width:${size}px;height:${size}px;margin-top:8px;border-radius:8px;display:block"></canvas>
       <div class="muted" style="margin-top:6px">藍＝可呼叫電梯　黃＝抵達中　綠＝已開啟　紅框＝高價值區域</div>`);
     $('modalBox').style.maxWidth = (size + 40) + 'px';
@@ -606,8 +610,8 @@ const UI = {
 
   pause(on) {
     Raid.paused = on;
-    if (!on) { this.closeModal(); Raid.last = performance.now(); return; }
-    Input.resetTouch();
+    if (!on) { this.closeModal(); Raid.last = performance.now(); Input.requestLock(); return; }
+    Input.resetTouch(); Input.exitLock();
     this.modal(`<h3>⏸ 暫停</h3><p class="muted">剩餘時間 ${Math.floor(Raid.time / 60)}:${String(Math.floor(Raid.time % 60)).padStart(2, '0')}。放棄遠征視同陣亡，只保留安全口袋內的物品。</p>
       <div class="acts" style="justify-content:stretch;flex-direction:column">
         <button class="btn primary" onclick="UI.pause(false)">繼續遊戲</button>
@@ -619,6 +623,7 @@ const UI = {
 
   // ================= 結算 =================
   showResults(r) {
+    Input.exitLock();
     const merged = {};
     for (const e of r.brought) { const key = e.k + (e.lvl ? ':' + e.lvl : ''); merged[key] = merged[key] || { k: e.k, n: 0, lvl: e.lvl }; merged[key].n += e.n || 1; }
     const tiles = Object.values(merged).map(e => itemTile(e)).join('');
